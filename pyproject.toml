@@ -1,7 +1,63 @@
 [project]
 name = "f3eo"
 version = "0.1.0"
-description = "Add your description here"
+authors = [{ name = "Rui.Lin", email = "Lin.Rui.ipwt@proton.me" }]
+description = "F3EO-Bench: The world first third-order optimizer benchmark framework"
 readme = "README.md"
-requires-python = ">=3.12"
-dependencies = []
+requires-python = ">=3.12, <3.13"
+license = { text = "AGPL-3.0-or-later" }
+dependencies = [
+    "torch>=2.7.1",
+    "rich>=14.0.0",
+    "tqdm",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["ref", ".venv"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["f3eo*", "scripts*", "optimizer*", "model*", "task*", "config*"]
+
+[project.urls]
+"Homepage" = "https://github.com/dmf-archive/F3EO-Bench"
+"Bug Tracker" = "https://github.com/dmf-archive/F3EO-Bench/issues"
+
+[dependency-groups]
+dev = [
+    "mypy",
+    "pytest",
+    "ruff",
+    "pytest>=8.4.1",
+    "torch==2.7.1+cu128",
+    "torchvision",
+    "torchaudio",
+    "types-pyyaml>=6.0.12.20250516",
+]
+
+[tool.mypy]
+namespace_packages = true
+explicit_package_bases = true
+ignore_missing_imports = true
+exclude = ["ref"]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "pyg-cu128"
+url = "https://data.pyg.org/whl/torch-2.7.0+cu128.html"
+explicit = true
+
+[tool.ruff]
+exclude = ["ref", "exp", ".venv"]
+
+[tool.ruff.lint]
+select = ["W", "F", "I", "UP", "B", "NPY", "SIM", "ISC", "TID"]
+ignore = ["B905"]
