@@ -191,6 +191,7 @@ def train(config: dict[str, Any], task_class) -> None:
             start_time = time.time()
             current_epoch = epoch + 1
 
+            monitor.start_epoch(epoch, len(train_loader))
             # Step 级进度条和实时监控
             def step_progress_callback(step, total_steps, loss, metric, grad_norm=None, items_per_sec=None):
                 if step % 10 == 0:  # 每10步更新一次
