@@ -1,4 +1,4 @@
-# F3EO: Fast Fisher-FreeEnergy Optimizer
+# F3EO: Fast Fisher Free-Energy Optimizer
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Python](https://img.shields.io/badge/Python-3.12+-green.svg)](https://python.org)

@@ -48,7 +48,6 @@ tags: ["process", "agent", "guidelines", "development"]
 - **REQ-203**: **计算规范**: 所有数据处理和计算逻辑应设计为纯函数，无任何外部副作用，并尽可能利用并行化的张量编程在 PyTorch 计算图内完成。
 - **REQ-204**: **文档公式**: 文档中公式必须使用 `unicode math`，禁止 LaTeX 块。
 - **REQ-206**: **可复现性**: 禁止任何隐式默认行为，所有参数需显式定义。必要时固定随机种子。
-- **GUD-207**: **梯度捕获**: 在元学习场景下，可以使用 `torch.autograd.grad(..., create_graph=False, retain_graph=True)` 来获取中间梯度张量并**无需创建二阶计算图**。注意：最新的 SARS 实现采用了 `backward()` 钩子以捕获 token 粒度的神经元梯度，这是一种受 Autograd 接口限制下的替代方案。
 
 ### 设计约束
 

@@ -61,6 +61,9 @@ def create_optimizer_scheduler(model, config, train_loader):
     elif optimizer_name == "F3EO":
         from optimizer.F3EO import F3EO
         optimizer = F3EO(model.parameters(), lr=lr, weight_decay=weight_decay)
+    elif optimizer_name == "F3EL":
+        from optimizer.F3EL import F3EL
+        optimizer = F3EL(model.parameters(), lr=lr, weight_decay=weight_decay)
     elif optimizer_name == "F3EW":
         from optimizer.F3EW import F3EW
         optimizer = F3EW(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -217,13 +220,13 @@ def train(config: dict[str, Any], task_class) -> None:
 
             # 更新 TrainingMonitor 中的 epoch 级别指标
             monitor_output = monitor.end_epoch(train_results, valid_results, current_lr)
-            
+
             if scheduler:
                 scheduler.step()
 
             # 更新最佳指标
             monitor_metric = valid_results.get("perplexity", valid_results.get("accuracy"))
-            
+
             table = Table(title=f"Epoch {epoch+1} Results")
             table.add_column("Split", style="cyan")
             table.add_column("Loss", justify="right", style="magenta")

@@ -1,4 +1,4 @@
-# F3EO: Fast Fisher-FreeEnergy Optimizer
+# F3EO: Fast Fisher Free-Energy Optimizer
 
 ## 核心论断：最大化误差驱动的协同度
 
