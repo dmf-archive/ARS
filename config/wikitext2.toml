@@ -20,9 +20,9 @@ name = "F3EO"
 lr = 0.001       # 对齐AdaFisher的学习率
 weight_decay = 5e-4  # 对齐AdaFisher
 
-[scheduler]
-name = "cosine"
-T_max = 10
+# [scheduler]
+# name = "cosine"
+# T_max = 10
 
 [train]
 epochs = 10

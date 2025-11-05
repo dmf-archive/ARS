@@ -1,6 +1,7 @@
 # F3EO-Bench Experiment Report
 
 ## Configuration Summary
+
 | Parameter | Value |
 |-|-------|
 | Task | cifar10 |
@@ -8,12 +9,13 @@
 | Optimizer | F3EO |
 | Learning Rate | 0.001 |
 | Weight Decay | 0.0005 |
-| Epochs | 46 |
+| Epochs | 200 |
 | Batch Size | 256 |
 | Device | cuda |
 | Seed | 42 |
 
 ## Training Results
+
 | Epoch | Train Loss | Valid Loss | Train Accuracy (%) | Valid Accuracy (%) | Learning Rate | Time |
 |-----|--|-----|-----|-----|-----|------|
 | 1 | 1.6102 | 1.3501 | 40.60 | 53.06 | 0.001000 | 249.90s |
@@ -62,14 +64,20 @@
 | 44 | 0.1827 | 0.3173 | 93.44 | 91.74 | 0.000890 | 249.32s |
 | 45 | 0.1733 | 0.2730 | 93.78 | 92.19 | 0.000885 | 250.21s |
 | 46 | 0.1788 | 0.2877 | 93.70 | 92.44 | 0.000880 | 249.21s |
+| 46 | 0.1688 | 0.2863 | 94.02 | 92.32 | 0.000875 | 249.63s |
+| 47 | 0.1658 | 0.2950 | 94.16 | 92.08 | 0.000870 | 249.61s |
+| 49 | 0.0805 | 0.3998 | 97.12 | 91.47 | 0.000864 | 251.01s |
+| 50 | 0.0812 | 0.3739 | 97.09 | 92.28 | 0.000859 | 250.33s |
 
 ## Performance Summary
+
 - **Best Validation Accuracy (%)**: 92.44
 - **Final Validation Accuracy (%)**: 92.44
 - **Total Training Time**: 11499.69s
 - **Average Epoch Time**: 249.66s
 
 ## Configuration Details
+
 ```toml
 {
   "experiment": {

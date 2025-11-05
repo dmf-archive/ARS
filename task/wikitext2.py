@@ -1,11 +1,14 @@
 import math
 import os
 from typing import Any
+from pathlib import Path
 
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+
+from utils.data_utils import download_file
 
 
 class Wikitext2Dataset:
@@ -86,43 +89,53 @@ class Wikitext2Task:
         return train_loader, valid_loader
 
     def get_model(self) -> nn.Module:
-        from model import get_model
-        return get_model("nano_gpt",
-                        vocabulary_size=self.vocabulary_size,
-                        embedding_size=self.embedding_size,
-                        sequence_length=self.sequence_length,
-                        num_heads=self.num_heads,
-                        num_layers=self.num_layers)
+        from model.nano_gpt import MiniGPT1
+        
+        # 下载预训练嵌入文件
+        embeddings_url = "https://github.com/ElementAI/duvenaud-gpt-code/raw/master/data/embeddings.npz"
+        embeddings_path = download_file(embeddings_url, Path("./data"), "embeddings.npz")
+
+        # 使用预训练嵌入加载模型
+        model = MiniGPT1.load_embeddings_from(
+            filename=str(embeddings_path),
+            num_heads=self.num_heads,
+            num_layers=self.num_layers,
+            learn_embeddings=True  # AdaFisher 默认会学习嵌入
+        )
+        return model
 
     def get_criterion(self) -> nn.Module:
         return nn.NLLLoss()
 
     def train_epoch(self, model: nn.Module, train_loader: DataLoader,
                    optimizer: torch.optim.Optimizer, criterion: nn.Module,
-                   progress_callback=None) -> dict[str, float]:
+                   monitor: Any, progress_callback=None) -> dict[str, float]:
         model.train()
         total_loss = 0.0
         total_tokens = 0
 
         # 检测是否使用需要二阶梯度的优化器
-        needs_second_order = hasattr(optimizer, '__class__') and optimizer.__class__.__name__ in ['F3EO', 'AdaHessian']
+        needs_second_order = hasattr(optimizer, '__class__') and optimizer.__class__.__name__ in ['F3EO', 'F3EL', 'F3EW', 'AdaHessian']
 
         for batch_idx, batch in enumerate(train_loader):
             batch = {k: v.to(self.device) for k, v in batch.items()}
 
             optimizer.zero_grad()
             log_probas = model(batch["source"])
-            loss = criterion(log_probas.view(-1, log_probas.size(-1)), batch["target"].view(-1))
-            loss = loss * batch["mask"].view(-1)
-            loss = loss.sum() / batch["mask"].sum()
+            # 使用模型内置的损失函数，因为它正确处理了掩码
+            loss = model.loss(log_probas, batch["target"], batch["mask"])
 
             # 根据优化器类型决定是否创建计算图
             if needs_second_order:
-                loss.backward(create_graph=True)
+                if optimizer.__class__.__name__ in ['F3EL']:
+                    loss.backward(create_graph=True)
+                    optimizer.step(loss=loss)
+                else:
+                    loss.backward(create_graph=True)
+                    optimizer.step()
             else:
                 loss.backward()
-
-            optimizer.step()
+                optimizer.step()
 
             total_loss += loss.item() * batch["mask"].sum().item()
             total_tokens += batch["mask"].sum().item()
@@ -130,17 +143,8 @@ class Wikitext2Task:
             # 每10个batch更新一次进度
             if progress_callback and (batch_idx + 1) % 10 == 0:
                 current_ppl = math.exp(loss.item())
-
-                # 计算过去10个batch的平均速度（以step为单位）
-                if not hasattr(self, '_last_callback_time'):
-                    self._last_callback_time = time.time()
-                current_time = time.time()
-                time_elapsed = current_time - self._last_callback_time
-                steps_processed = 10
-                steps_per_sec = steps_processed / time_elapsed if time_elapsed > 0 else 0.0
-                self._last_callback_time = current_time
-
-                progress_callback(batch_idx + 1, len(train_loader), loss.item(), current_ppl, None, steps_per_sec)
+                grad_norm = monitor.compute_grad_norm(model)
+                progress_callback(batch_idx + 1, len(train_loader), loss.item(), current_ppl, grad_norm, 0.0) # it/s is handled by train.py
 
         avg_loss = total_loss / total_tokens
         perplexity = math.exp(avg_loss)
@@ -158,9 +162,7 @@ class Wikitext2Task:
                 batch = {k: v.to(self.device) for k, v in batch.items()}
 
                 log_probas = model(batch["source"])
-                loss = criterion(log_probas.view(-1, log_probas.size(-1)), batch["target"].view(-1))
-                loss = loss * batch["mask"].view(-1)
-                loss = loss.sum() / batch["mask"].sum()
+                loss = model.loss(log_probas, batch["target"], batch["mask"])
 
                 total_loss += loss.item() * batch["mask"].sum().item()
                 total_tokens += batch["mask"].sum().item()

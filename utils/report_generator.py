@@ -18,7 +18,9 @@ class ReportGenerator:
             "epoch_time": []
         }
         if preload_history is not None:
-            self.metrics_history.update(preload_history)
+            for key in self.metrics_history:
+                if key in preload_history:
+                    self.metrics_history[key].extend(preload_history[key])
         self.start_time = time.time()
         self.task_type = config["experiment"]["task"]
 
@@ -53,7 +55,8 @@ class ReportGenerator:
         # 生成 markdown 表格
         table_rows = []
         for i in range(epochs):
-            row = f"| {i+1} | "
+            # 使用 history 中的 epoch 编号，而不是循环索引
+            row = f"| {self.metrics_history['epoch'][i]} | "
             row += f"{self.metrics_history['train_loss'][i]:.4f} | "
             row += f"{self.metrics_history['valid_loss'][i]:.4f} | "
             row += f"{self.metrics_history['train_metric'][i]:.2f} | "
@@ -74,7 +77,7 @@ class ReportGenerator:
 | Optimizer | {self.config['optimizer']['name']} |
 | Learning Rate | {self.config['optimizer']['lr']} |
 | Weight Decay | {self.config['optimizer']['weight_decay']} |
-| Epochs | {epochs} |
+| Epochs | {self.config['train']['epochs']} |
 | Batch Size | {self.config['data']['batch_size']} |
 | Device | {self.config['experiment']['device']} |
 | Seed | {self.config['experiment']['seed']} |
