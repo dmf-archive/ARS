@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="icon.png" alt="F3EO Icon" width="200"/>
+</p>
+
 # F3EO: Fast Fisher Free-Energy Optimizer
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
