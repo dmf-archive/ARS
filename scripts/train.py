@@ -46,29 +46,17 @@ def get_task_module(task_name: str):
 
 
 def create_optimizer_scheduler(model, config, train_loader):
-    optimizer_name = config["optimizer"]["name"]
-    lr = config["optimizer"]["lr"]
-    weight_decay = config["optimizer"]["weight_decay"]
+    from optimizer import get_optimizer
 
-    if optimizer_name == "AdamW":
-        optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    elif optimizer_name == "AdaHessian":
-        from optimizer.ada_hessian import Adahessian
-        optimizer = Adahessian(model.parameters(), lr=lr, weight_decay=weight_decay)
-    elif optimizer_name == "AdaFisher":
-        from optimizer.ada_fisher import AdaFisher
-        optimizer = AdaFisher(model.parameters(), lr=lr, weight_decay=weight_decay)
-    elif optimizer_name == "F3EO":
-        from optimizer.F3EO import F3EO
-        optimizer = F3EO(model.parameters(), lr=lr, weight_decay=weight_decay)
-    elif optimizer_name == "F3EL":
-        from optimizer.F3EL import F3EL
-        optimizer = F3EL(model.parameters(), lr=lr, weight_decay=weight_decay)
-    elif optimizer_name == "F3EW":
-        from optimizer.F3EW import F3EW
-        optimizer = F3EW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    else:
-        raise ValueError(f"Unknown optimizer: {optimizer_name}")
+    optimizer_name = config["optimizer"]["name"]
+    optimizer_config = config["optimizer"].copy()
+    optimizer_config.pop("name", None)  # 移除name字段，只保留配置参数
+
+    # 特殊处理AdaFisher，它需要模型作为第一个参数
+    if optimizer_name == "AdaFisher":
+        optimizer_config["model"] = model
+
+    optimizer = get_optimizer(optimizer_name, model.parameters(), **optimizer_config)
 
     scheduler = None
     if "scheduler" in config:

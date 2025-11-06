@@ -1,6 +1,7 @@
 import os
 import urllib.request
 from pathlib import Path
+
 from rich.console import Console
 
 console = Console()

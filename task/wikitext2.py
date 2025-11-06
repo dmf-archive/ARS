@@ -1,13 +1,14 @@
 import math
 import time
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 import torch
 import torch.nn as nn
 from datasets import load_dataset
+from tokenizers import Tokenizer, decoders, models, pre_tokenizers, trainers
 from torch.utils.data import DataLoader, Dataset
-from tokenizers import Tokenizer, models, pre_tokenizers, decoders, trainers
 
 
 def get_or_train_tokenizer(config: dict[str, Any]) -> Tokenizer:
@@ -34,7 +35,7 @@ def get_or_train_tokenizer(config: dict[str, Any]) -> Tokenizer:
         tokenizer = Tokenizer(models.BPE())
         tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
         tokenizer.decoder = decoders.ByteLevel()
-        
+
         trainer = trainers.BpeTrainer(
             vocab_size=vocab_size, special_tokens=["<|endoftext|>", "<pad>"]
         )
@@ -50,14 +51,14 @@ class TokenizedWikitext2Dataset(Dataset):
     """A PyTorch Dataset for tokenized wikitext-2 data."""
     def __init__(self, split: str, tokenizer: Tokenizer, max_length: int):
         self.max_length = max_length
-        
+
         # Load raw dataset
         raw_dataset = load_dataset("wikitext", "wikitext-2-raw-v1", split=split)
-        
+
         # Filter out empty lines and tokenize
         texts = [item['text'] for item in raw_dataset if item['text']]
         tokenized_output = tokenizer.encode_batch(texts)
-        
+
         # Concatenate all token ids and then chunk them
         all_ids = [item.ids for item in tokenized_output]
         concatenated_ids = torch.cat([torch.tensor(ids, dtype=torch.long) for ids in all_ids])
@@ -125,17 +126,17 @@ class Wikitext2Task:
         total_tokens = 0
         last_callback_time = time.time()
 
-        needs_second_order = hasattr(optimizer, '__class__') and optimizer.__class__.__name__ in ['F3EO', 'F3EL', 'F3EW', 'AdaHessian']
+        needs_second_order = hasattr(optimizer, '__class__') and optimizer.__class__.__name__ in ['F3EO', 'F3EL', 'F3EW', 'F3EPI', 'AdaHessian']
 
         for batch_idx, batch in enumerate(train_loader):
             batch = {k: v.to(self.device) for k, v in batch.items()}
-            
+
             optimizer.zero_grad()
             log_probas = model(batch["source"])
             loss = model.loss(log_probas, batch["target"], batch["mask"])
 
             if needs_second_order:
-                if optimizer.__class__.__name__ in ['F3EL']:
+                if optimizer.__class__.__name__ in ['F3EL', 'F3EPI']:
                     loss.backward(create_graph=True)
                     optimizer.step(loss=loss)
                 else:
@@ -151,7 +152,7 @@ class Wikitext2Task:
             if progress_callback and (batch_idx + 1) % 10 == 0:
                 current_ppl = math.exp(loss.item())
                 grad_norm = monitor.compute_grad_norm(model)
-                
+
                 current_time = time.time()
                 time_elapsed = current_time - last_callback_time
                 steps_processed = 10
