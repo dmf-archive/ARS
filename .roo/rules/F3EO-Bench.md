@@ -16,7 +16,7 @@
 
 ## 2. 目录结构（参考 adafisher 极简风）
 
-```
+```ascii
 f3eo-bench/
 ├── README.md      # 30 秒上手命令
 ├── pyproject.toml # 只留 torch rich tqdm
@@ -77,57 +77,3 @@ python -m scripts/train.py --config config/cifar10.toml
    顺序 MNIST→FashionMNIST，每任务 5 epoch，记录最终平均遗忘率。
 
 ## 5. 配置示例（`config/cifar10.toml`）
-
-```toml
-[experiment]
-task = "cifar10"
-seed = 42
-device = "cuda"
-
-[model]
-arch = "resnet20"
-num_classes = 10
-
-[data]
-batch_size = 128   # 自动减半直到不 OOM
-num_workers = 4
-
-[optimizer]
-# 只改这一行即可切换
-name = "F3EO"  # 可选 AdamW / AdaHessian / F3EO
-lr = 0.1
-weight_decay = 5e-4
-
-[scheduler]
-milestones = [60, 120, 160]
-gamma = 0.2
-
-[train]
-epochs = 200
-log_every = 10
-ckpt_every = 50
-```
-
-## 6. 输出样例（终端 Rich 面板）
-
-```
-┏━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━┓
-┃ Optimizer     ┃ Loss   ┃ Top-1  ┃ GradNorm ┃ GPU-Mem ┃
-┡━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━┩
-│ F3EO   │ 0.142  │ 94.7 % │ 2.31e-2  │ 7.3 GB  │
-│ AdamW  │ 0.156  │ 94.1 % │ 1.85e-2  │ 7.3 GB  │
-└───────────────┴────────┴────────┴──────────┴─────────┘
-```
-
-## 7. 交付 checklist
-
-- [ ] `uv run scripts/run_all.sh` 在 RTX 2070 8 GB 上一小时内跑完三类实验
-- [ ] 自动生成 `outputs/summary.md` 含加速比 & 遗忘率表格
-- [ ] 终端 Rich 实时面板无额外依赖（已内置 rich）
-- [ ] 所有代码 ≤ 500 行，单文件即可读
-- [ ] 开源许可证 AGPL-3.0（与 Tiny-ONN 保持一致）
-
----
-
-> 一句话打动用户：  
-> “把 `optimizer = AdamW` 换成 `optimizer = F3EO()`，**CIFAR-10 收敛快 1.5×，遗忘降 30 %**，8 GB 单卡一键复现。”

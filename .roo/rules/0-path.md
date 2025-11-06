@@ -6,7 +6,6 @@
 - `huggingface/transformers`
 - `huggingface/accelerate`
 - `amirgholami/adahessian`
-- `SamsungSAILMontreal/TinyRecursiveModels`
 - `KellerJordan/Muon`
 - `huggingface/candle`
 - `bitsandbytes-foundation/bitsandbytes`
