@@ -84,25 +84,38 @@ class Wikitext2Task:
         self.config["model"]["vocabulary_size"] = self.tokenizer.get_vocab_size()
 
     def _prepare_dataset(self, split: str) -> ConcatenatedWikitext2Dataset:
-        """Tokenizes, concatenates, and chunks the dataset."""
-        raw_dataset = load_dataset("wikitext", "wikitext-2-raw-v1", split=split)
-        
-        all_token_ids = []
-        eos_token_id = self.tokenizer.token_to_id("<|endoftext|>")
-        if eos_token_id is None:
-            eos_token_id = self.tokenizer.get_vocab_size() - 1
+        """
+        Loads pre-tokenized and concatenated data if available, otherwise
+        tokenizes, concatenates, and chunks the dataset, then saves it to cache.
+        """
+        cache_dir = Path("./data/cache")
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_file = cache_dir / f"wikitext2_{split}_ids.pt"
 
-        print(f"Tokenizing and concatenating '{split}' split...")
-        for item in raw_dataset:
-            text = item['text']
-            if not text or text.isspace():
-                continue
+        if cache_file.exists():
+            print(f"Loading cached concatenated IDs for '{split}' split...")
+            concatenated_ids = torch.load(cache_file)
+        else:
+            print(f"No cache found. Tokenizing and concatenating '{split}' split...")
+            raw_dataset = load_dataset("wikitext", "wikitext-2-raw-v1", split=split)
             
-            tokenized_output = self.tokenizer.encode(text)
-            all_token_ids.extend(tokenized_output.ids)
-            all_token_ids.append(eos_token_id)
-            
-        concatenated_ids = torch.tensor(all_token_ids, dtype=torch.long)
+            all_token_ids = []
+            eos_token_id = self.tokenizer.token_to_id("<|endoftext|>")
+            if eos_token_id is None:
+                eos_token_id = self.tokenizer.get_vocab_size() - 1
+
+            for item in raw_dataset:
+                text = item['text']
+                if not text or text.isspace():
+                    continue
+                
+                tokenized_output = self.tokenizer.encode(text)
+                all_token_ids.extend(tokenized_output.ids)
+                all_token_ids.append(eos_token_id)
+                
+            concatenated_ids = torch.tensor(all_token_ids, dtype=torch.long)
+            print(f"Saving concatenated IDs to cache: {cache_file}")
+            torch.save(concatenated_ids, cache_file)
         
         return ConcatenatedWikitext2Dataset(concatenated_ids, self.sequence_length)
 
@@ -176,9 +189,7 @@ class Wikitext2Task:
                 beta_complexity = None
                 if needs_second_order and hasattr(optimizer, 'last_log_pi'):
                     log_pi = optimizer.last_log_pi
-                    # 计算 beta_complexity 用于显示（新实现已用 clip，此处同步）
-                    import torch
-                    beta_complexity = torch.clamp(torch.tensor(log_pi), -1.0, 1.0).item() if log_pi is not None else None
+                    beta_complexity = optimizer.last_beta_complexity if hasattr(optimizer, 'last_beta_complexity') else None
 
                 current_time = time.time()
                 time_elapsed = current_time - last_callback_time

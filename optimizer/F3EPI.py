@@ -36,7 +36,8 @@ class F3EPI(Optimizer):
 
         self.single_gpu = single_gpu
         super(F3EPI, self).__init__(params, defaults)
-        self.last_log_pi = 0.0  # 用于记录最后一次的log(PI)值
+        self.last_log_pi = 0.0
+        self.last_beta_complexity = 0.0
 
     def step(self, closure=None, loss=None):
         eval_loss = None
@@ -72,11 +73,13 @@ class F3EPI(Optimizer):
             alpha = self.param_groups[0]['alpha']
             gamma = self.param_groups[0]['gamma']
             log_pi = -alpha * main_loss.detach() + alpha * gamma * grad_norm_for_pi
-            beta_complexity = torch.tanh(log_pi)
-            self.last_log_pi = log_pi.item()  # 保存log(PI)值用于监控
+            beta_complexity = log_pi
+            self.last_log_pi = log_pi.item()
+            self.last_beta_complexity = beta_complexity.item()
         else:
             beta_complexity = 0.0
             self.last_log_pi = 0.0
+            self.last_beta_complexity = 0.0
 
         # 计算 meta_grads (即 ∇θ ||g||²)
         meta_grads = torch.autograd.grad(grad_norm_sq_for_meta, params_with_grad, retain_graph=False, allow_unused=True)
