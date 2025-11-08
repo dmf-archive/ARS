@@ -12,16 +12,18 @@ num_heads = 12
 num_layers = 4
 
 [data]
-batch_size = 8
+batch_size = 1
 num_workers = 4
 tokenizer_path = "./data/wikitext2_tokenizer.json"
 
 [optimizer]
-name = "F3EWD"
+name = "F3EO_raw"
 lr = 0.0001
 weight_decay = 0.1
-betas = [0.5, 0.999] # 降低动量影响，提升三阶信息占比
-gamma = 0.5
+betas = [0.9, 0.999]
+
+gamma = 1.0
+alpha = 1.0
 
 [train]
 epochs = 30

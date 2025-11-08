@@ -1,7 +1,6 @@
 # F3EO-Bench Experiment Report
 
 ## Configuration Summary
-
 | Parameter | Value |
 |-|-------|
 | Task | wikitext2 |
@@ -15,7 +14,6 @@
 | Seed | 42 |
 
 ## Training Results
-
 | Epoch | Train Loss | Valid Loss | Train Perplexity | Valid Perplexity | Learning Rate | PI | Eff. Gamma | Entropy | Time |
 |-----|--|-----|-----|-----|-----|----|---|---|------|
 | 1 | 24.9645 | 16.7819 | 69494808174.53 | 19421299.16 | 0.000100 | N/A | N/A | N/A | 251.04s |
@@ -30,16 +28,17 @@
 | 10 | 6.0581 | 6.5681 | 427.56 | 712.05 | 0.000100 | N/A | N/A | N/A | 253.89s |
 | 11 | 5.9001 | 6.5051 | 365.09 | 668.54 | 0.000100 | N/A | N/A | N/A | 254.13s |
 | 12 | 5.7301 | 6.5161 | 308.00 | 675.95 | 0.000100 | N/A | N/A | N/A | 255.59s |
+| 13 | 5.5555 | 6.5311 | 258.67 | 686.16 | 0.000100 | N/A | N/A | N/A | 258.31s |
+| 14 | 5.3636 | 6.5591 | 213.49 | 705.62 | 0.000100 | N/A | N/A | N/A | 260.96s |
+| 15 | 5.1563 | 6.6699 | 173.52 | 788.32 | 0.000100 | N/A | N/A | N/A | 265.23s |
 
 ## Performance Summary
-
 - **Best Validation Perplexity**: 668.54
-- **Final Validation Perplexity**: 675.95
-- **Total Training Time**: 3108.72s
-- **Average Epoch Time**: 256.42s
+- **Final Validation Perplexity**: 788.32
+- **Total Training Time**: 3901.31s
+- **Average Epoch Time**: 257.44s
 
 ## Configuration Details
-
 ```toml
 {
   "experiment": {
