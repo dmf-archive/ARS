@@ -1,5 +1,5 @@
 [experiment]
-task = "wikitext2"
+tasks = ["wikitext2"]
 seed = 42
 device = "cuda"
 

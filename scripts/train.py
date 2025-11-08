@@ -2,289 +2,178 @@ import argparse
 import importlib
 import sys
 import time
-import warnings
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List
 
 import toml
 import torch
-from rich.console import Console
 
-# 忽略 timm 的 FutureWarning
-warnings.filterwarnings("ignore", category=FutureWarning, module="timm")
-from rich.panel import Panel
-from rich.progress import (
-    BarColumn,
-    Progress,
-    SpinnerColumn,
-    TaskProgressColumn,
-    TextColumn,
-    TimeElapsedColumn,
-)
-from rich.table import Table
-
+from utils.data import CLStore, StepMetric
+from utils.observers.console import ConsoleLogger
+from utils.observers.markdown import MDLogger
+from utils.observers.checkpoint import CheckpointSaver
 from utils.early_stop import EarlyStop
-from utils.report_generator import ReportGenerator
-from utils.training_monitor import TrainingMonitor
+from utils.metrics import PICalculator, compute_grad_norm # Import from new metrics module
 
-console = Console()
-
-
-def load_config(config_path: Path) -> dict[str, Any]:
+def load_config(config_path: Path) -> dict:
     with open(config_path) as f:
         return toml.load(f)
 
-
-def get_task_module(task_name: str):
+def get_task_class(task_name: str):
     try:
         module = importlib.import_module(f"task.{task_name}")
-        task_class = getattr(module, f"{task_name.capitalize()}Task")
-        return task_class
+        return getattr(module, f"{task_name.capitalize()}Task")
     except (ImportError, AttributeError) as e:
-        console.print(f"[red]Error loading task module '{task_name}': {e}[/red]")
+        print(f"Error loading task module '{task_name}': {e}")
         sys.exit(1)
 
-
-def create_optimizer_scheduler(model, config, train_loader):
+def create_optimizer(model, config):
     from optimizer import get_optimizer
+    opt_name = config["optimizer"]["name"]
+    opt_config = {k: v for k, v in config["optimizer"].items() if k != "name"}
+    if opt_name == "AdaFisher":
+        opt_config["model"] = model
+    return get_optimizer(opt_name, model.parameters(), **opt_config)
 
-    optimizer_name = config["optimizer"]["name"]
-    optimizer_config = config["optimizer"].copy()
-    optimizer_config.pop("name", None)
+def create_scheduler(optimizer, config):
+    if "scheduler" not in config:
+        return None
+    sched_name = config["scheduler"].get("name")
+    if sched_name == "cosine":
+        return torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config["scheduler"]["T_max"])
+    elif sched_name == "multistep":
+        return torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=config["scheduler"]["milestones"], gamma=config["scheduler"]["gamma"])
+    return None
 
-    if optimizer_name == "AdaFisher":
-        optimizer_config["model"] = model
-
-    optimizer, tags, pi_config = get_optimizer(optimizer_name, model.parameters(), **optimizer_config)
-
-    scheduler = None
-    if "scheduler" in config:
-        scheduler_name = config["scheduler"].get("name", "none")
-        if scheduler_name == "cosine":
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                optimizer, T_max=config["scheduler"]["T_max"]
-            )
-        elif scheduler_name == "multistep":
-            scheduler = torch.optim.lr_scheduler.MultiStepLR(
-                optimizer, milestones=config["scheduler"]["milestones"],
-                gamma=config["scheduler"]["gamma"]
-            )
-
-    return optimizer, scheduler, tags, pi_config
-
-
-def train(config: dict[str, Any], task_class, config_name: str) -> None:
+def train(config: Dict[str, Any], config_name: str):
     device = torch.device(config["experiment"]["device"])
-    seed = config["experiment"]["seed"]
-    torch.manual_seed(seed)
-
+    torch.manual_seed(config["experiment"]["seed"])
     if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed(config["experiment"]["seed"])
 
-    task = task_class(config)
-    train_loader, valid_loader = task.get_dataloaders()
-    model = task.get_model().to(device)
-    criterion = task.get_criterion()
-    optimizer, scheduler, optimizer_tags, pi_config = create_optimizer_scheduler(model, config, train_loader)
-
-    epochs = config["train"]["epochs"]
-
-    # 使用配置文件名作为实验名
-    experiment_name = config_name
-    output_dir = Path("outputs") / config["experiment"]["task"] / experiment_name
+    output_dir = Path("outputs") / config_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 初始化训练监控器（支持断点续训）
-    monitor = TrainingMonitor(config, output_dir, pi_config=pi_config)
+    task_names = config["experiment"]["tasks"]
+    tasks = {name: get_task_class(name)(config) for name in task_names}
+    # Assume a single model and criterion for now
+    model = tasks[task_names[0]].get_model().to(device)
+    criterion = tasks[task_names[0]].get_criterion()
+    optimizer, optimizer_tags, pi_config = create_optimizer(model, config)
+    scheduler = create_scheduler(optimizer, config)
 
-    # 检查是否存在检查点文件
-    checkpoint_path = output_dir / "latest_checkpoint.pt"
+    # --- New Unified Architecture ---
+    store = CLStore()
+    console_logger = ConsoleLogger(config)
+    md_logger = MDLogger(config, output_dir)
+    ckpt_saver = CheckpointSaver(output_dir)
+
+    # --- Force-enable PI calculation for all tasks ---
+    # If pi_config is not provided by the optimizer, use defaults.
+    pi_gamma = pi_config.get("gamma", 1.0) if pi_config else 1.0
+    pi_alpha = pi_config.get("alpha", 1.0) if pi_config else 1.0
+    pi_ema_beta = pi_config.get("ema_beta") if pi_config else None
+    pi_calculator = PICalculator(gamma=pi_gamma, alpha=pi_alpha, ema_beta=pi_ema_beta)
+    # ---
+
+    console_logger.on_train_begin(str(output_dir))
+
     start_epoch = 0
-
-    if checkpoint_path.exists():
-        console.print("[yellow]Found checkpoint, resuming training...[/yellow]")
-        checkpoint = monitor.load_checkpoint(checkpoint_path)
-
-        # 恢复模型状态
-        model.load_state_dict(checkpoint["model_state_dict"])
-        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        if scheduler and checkpoint["scheduler_state_dict"]:
-            scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
-
+    checkpoint = ckpt_saver.load(output_dir / "latest_checkpoint.pt", model, optimizer, scheduler)
+    if checkpoint:
         start_epoch = checkpoint["epoch"] + 1
-        console.print(f"[green]Resumed from epoch {start_epoch}[/green]")
+        store = checkpoint["store"]
+        print(f"Resuming training from epoch {start_epoch}")
+    else:
+        store = CLStore()
+    
+    # Ensure get_dataloaders() is called only once per task to avoid duplicate logs
+    train_loaders = {}
+    valid_loaders = {}
+    for name, task in tasks.items():
+        train_loader, valid_loader = task.get_dataloaders()
+        train_loaders[name] = train_loader
+        valid_loaders[name] = valid_loader
+    
+    global_step = 0
+    epochs = config["train"]["epochs"]
 
-    # 初始化早停机制
-    early_stop_patience = config.get("early_stop", {}).get("patience", 10)
-    early_stop_threshold = config.get("early_stop", {}).get("threshold", -1.0)
-    early_stop_mode = "min" if config['experiment']['task'] == 'wikitext2' else "max"
-    early_stop = EarlyStop(patience=early_stop_patience, threshold=early_stop_threshold, mode=early_stop_mode)
-    early_stop.best_metric = monitor.best_metric  # 恢复早停状态
-
-    preload_history = None
-    if start_epoch > 0 and monitor.epoch_metrics_history:
-        preload_history = {
-            "epoch": [m["epoch"] for m in monitor.epoch_metrics_history],
-            "train_loss": [m["train_loss"] for m in monitor.epoch_metrics_history],
-            "valid_loss": [m["valid_loss"] for m in monitor.epoch_metrics_history],
-            "train_metric": [m["train_metric"] for m in monitor.epoch_metrics_history],
-            "valid_metric": [m["valid_metric"] for m in monitor.epoch_metrics_history],
-            "learning_rate": [m["learning_rate"] for m in monitor.epoch_metrics_history],
-            "epoch_time": [m["epoch_time"] for m in monitor.epoch_metrics_history],
-            "pi": [m.get("pi") for m in monitor.epoch_metrics_history],
-            "effective_gamma": [m.get("effective_gamma") for m in monitor.epoch_metrics_history],
-            "entropy": [m.get("entropy") for m in monitor.epoch_metrics_history],
-        }
-    report_gen = ReportGenerator(config, output_dir, preload_history=preload_history)
-
-    console.print(Panel.fit(
-        f"[bold cyan]Task:[/bold cyan] {config['experiment']['task']}\n"
-        f"[bold cyan]Model:[/bold cyan] {config['model']['arch']}\n"
-        f"[bold cyan]Optimizer:[/bold cyan] {config['optimizer']['name']}\n"
-        f"[bold cyan]Epochs:[/bold cyan] {epochs}\n"
-        f"[bold cyan]Device:[/bold cyan] {device}\n"
-        f"[bold cyan]Output:[/bold cyan] {output_dir}",
-        title="[bold]F3EO-Bench Training[/bold]",
-        border_style="cyan"
-    ))
-
-
-    # 创建实时表格用于 step 级监控
-
-    def create_metrics_table():
-        table = Table(title="Training Metrics (Step-level)")
-        table.add_column("Metric", style="cyan")
-        table.add_column("Value", justify="right", style="magenta")
-        return table
-
-    def update_metrics_table(table, epoch, step, total_steps, loss, acc, lr):
-        table.rows.clear()
-        table.add_row("Epoch", f"{epoch}/{epochs}")
-        table.add_row("Step", f"{step}/{total_steps}")
-        table.add_row("Loss", f"{loss:.4f}")
-        table.add_row("Accuracy", f"{acc:.2f}%")
-        table.add_row("Learning Rate", f"{lr:.6f}")
-        return table
-
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
-        overall_epoch_task = progress.add_task("Training Progress", total=epochs)
-
+    for task_name in task_names:
+        current_task = tasks[task_name]
+        current_train_loader = train_loaders[task_name]
+        total_steps = len(current_train_loader)
+        
         for epoch in range(start_epoch, epochs):
-            start_time = time.time()
-            current_epoch = epoch + 1
+            model.train()
+            console_logger.on_epoch_begin(epoch, total_steps)
 
-            monitor.start_epoch(epoch, len(train_loader))
-            # Step 级进度条和实时监控
-            def step_progress_callback(epoch, step, total_steps, loss, metric, grad_norm=None, items_per_sec=None, pi=None, effective_gamma=None, entropy=None):
-                if step % 10 == 0:  # 每10步更新一次
-                    base_msg = f"[dim]Epoch {epoch+1}/{epochs} | Step {step}/{total_steps} | Loss: {loss:.4f}"
-                    if 'wikitext2' in config['experiment']['task']:
-                        base_msg += f" | PPL: {metric:.2f}"
-                    else:
-                        base_msg += f" | Acc: {metric:.2f}%"
+            for step, batch in enumerate(current_train_loader):
+                logits, loss, step_metrics = current_task.train_step(model, batch, criterion, optimizer, pi_config)
+                
+                grad_norm = compute_grad_norm(model)
+                
+                pi, eff_gamma, entropy = None, None, None
+                if pi_calculator and logits is not None:
+                    with torch.no_grad():
+                        probas = torch.softmax(logits, dim=-1)
+                        log_probas = torch.log_softmax(logits, dim=-1)
+                        entropy_tensor = -(probas * log_probas).sum(dim=-1).mean()
+                        entropy = entropy_tensor.item()
+                        _, pi = pi_calculator.calculate_pi(entropy_tensor, grad_norm)
+                        if pi is not None:
+                            eff_gamma = -torch.log(1.0 - torch.tensor(pi) + pi_calculator.eps).item()
 
-                    if grad_norm is not None:
-                        base_msg += f" | Grad: {grad_norm:.4f}"
-                    if items_per_sec is not None:
-                        base_msg += f" | {items_per_sec:.1f}it/s"
-                    if pi is not None:
-                        base_msg += f" | PI: {pi:.3f}"
-                    if effective_gamma is not None:
-                        base_msg += f" | β: {effective_gamma:.3f}"
-                    if entropy is not None:
-                        base_msg += f" | H: {entropy:.3f}"
+                metric = StepMetric(
+                    global_step=global_step,
+                    epoch=epoch,
+                    step_in_epoch=step,
+                    task_name=task_name,
+                    loss=loss,
+                    eval_metrics=step_metrics,
+                    grad_norm=grad_norm,
+                    learning_rate=optimizer.param_groups[0]['lr'],
+                    pi=pi, effective_gamma=eff_gamma, entropy=entropy,
+                    timestamp=time.time()
+                )
+                store.add_step(metric)
+                console_logger.on_step_end(metric, total_steps)
+                global_step += 1
 
-                    console.print(base_msg + "[/dim]")
-
-            # 将优化器能力标签传递给任务脚本
-            train_results = task.train_epoch(model, train_loader, optimizer, criterion, monitor, step_progress_callback, optimizer_tags)
-            valid_results = task.validate_epoch(model, valid_loader, criterion)
-
-            epoch_time = time.time() - start_time
-
-            # 记录学习率
-            current_lr = optimizer.param_groups[0]['lr']
-
-            # 从 monitor 的历史记录中获取最新的 PI 相关指标
-            last_metrics = monitor.metrics_history[-1] if monitor.metrics_history else None
-            epoch_pi = last_metrics.pi if last_metrics else None
-            epoch_effective_gamma = last_metrics.effective_gamma if last_metrics else None
-            epoch_entropy = last_metrics.entropy if last_metrics else None
-
-            # 记录指标到报告生成器
-            report_gen.log_epoch(
-                epoch + 1, train_results, valid_results, current_lr, epoch_time,
-                epoch_pi, epoch_effective_gamma, epoch_entropy
-            )
-
-            # 更新 TrainingMonitor 中的 epoch 级别指标
-            monitor.end_epoch(train_results, valid_results, current_lr)
-
+            model.eval()
+            all_eval_metrics = {}
+            with torch.no_grad():
+                for eval_task_name, eval_loader in valid_loaders.items():
+                    eval_task = tasks[eval_task_name]
+                    results = eval_task.validate_epoch(model, eval_loader, criterion)
+                    metric_key = "perplexity" if "wikitext2" in eval_task_name else "accuracy"
+                    all_eval_metrics[eval_task_name] = results[metric_key]
+            
+            last_metric = store.get_full_history()[-1]
+            last_metric.eval_metrics.update(all_eval_metrics)
+            
+            console_logger.on_epoch_end(store)
+            
+            ckpt_saver.save(epoch, model, optimizer, scheduler, store)
+            
             if scheduler:
                 scheduler.step()
 
-            # 更新最佳指标
-            monitor_metric = valid_results.get("perplexity", valid_results.get("accuracy"))
-
-            table = Table(title=f"Epoch {epoch+1} Results")
-            table.add_column("Split", style="cyan")
-            table.add_column("Loss", justify="right", style="magenta")
-            if 'wikitext2' in config['experiment']['task']:
-                table.add_column("Perplexity", justify="right", style="green")
-                table.add_row("Train", f"{train_results['loss']:.4f}", f"{train_results['perplexity']:.2f}")
-                table.add_row("Valid", f"{valid_results['loss']:.4f}", f"{valid_results['perplexity']:.2f}")
-            else:
-                table.add_column("Accuracy", justify="right", style="green")
-                table.add_row("Train", f"{train_results['loss']:.4f}", f"{train_results['accuracy']:.2f}%")
-                table.add_row("Valid", f"{valid_results['loss']:.4f}", f"{valid_results['accuracy']:.2f}%")
-
-            console.print(table)
-            console.print(f"[dim]Epoch time: {epoch_time:.2f}s, LR: {current_lr:.6f}[/dim]")
-
-            progress.update(overall_epoch_task, advance=1)
-
-            # 每个 epoch 结束都保存检查点，由 monitor 内部管理轮动
-            monitor.save_checkpoint(model, optimizer, scheduler)
-
-            # 早停检查
-            if early_stop(monitor_metric):
-                console.print(f"[yellow]Early stopping triggered at epoch {epoch+1}[/yellow]")
-                break
-
-            # 生成当前 epoch 的报告
-            report_gen.generate_summary()
-
-    console.print("\n[bold green]Training completed![/bold green]")
-    metric_name = "Perplexity" if config['experiment']['task'] == 'wikitext2' else "Accuracy"
-    console.print(f"[bold]Best validation {metric_name.lower()}: {monitor.best_metric:.2f} at epoch {monitor.best_epoch + 1}[/bold]")
-    console.print(f"[dim]Report saved to: {output_dir}/summary.md[/dim]")
-
+    md_logger.on_train_end(store)
+    console_logger.on_train_end(store)
 
 def main():
-    parser = argparse.ArgumentParser(description="F3EO-Bench Training Framework")
+    parser = argparse.ArgumentParser(description="Unified F3EO-Bench Training Framework")
     parser.add_argument("--config", type=str, required=True, help="Path to TOML configuration file")
-
     args = parser.parse_args()
+    
     config_path = Path(args.config)
-
     if not config_path.exists():
-        console.print(f"[red]Config file not found: {config_path}[/red]")
+        print(f"Config file not found: {config_path}")
         sys.exit(1)
-
+        
     config = load_config(config_path)
-    task_name = config["experiment"]["task"]
-
-    task_class = get_task_module(task_name)
-    config_name = config_path.stem  # 从文件名获取实验名
-    train(config, task_class, config_name)
-
+    config_name = config_path.stem
+    train(config, config_name)
 
 if __name__ == "__main__":
     main()

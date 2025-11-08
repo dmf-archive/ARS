@@ -2,13 +2,16 @@ import math
 import time
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict
 
 import torch
 import torch.nn as nn
 from datasets import load_dataset
 from tokenizers import Tokenizer, decoders, models, pre_tokenizers, trainers
 from torch.utils.data import DataLoader, Dataset
+
+
+from .base import BaseTask
 
 
 def get_or_train_tokenizer(config: dict[str, Any]) -> Tokenizer:
@@ -73,13 +76,12 @@ class ConcatenatedWikitext2Dataset(Dataset):
         return {"source": source, "target": target, "mask": mask}
 
 
-class Wikitext2Task:
+class Wikitext2Task(BaseTask):
     def __init__(self, config: dict[str, Any]):
-        self.config = config
+        super().__init__(config)
         self.sequence_length = config["model"]["sequence_length"]
         self.batch_size = config["data"]["batch_size"]
         self.num_workers = config["data"]["num_workers"]
-        self.device = config["experiment"]["device"]
         self.tokenizer = get_or_train_tokenizer(config)
         self.config["model"]["vocabulary_size"] = self.tokenizer.get_vocab_size()
 
@@ -148,64 +150,27 @@ class Wikitext2Task:
     def get_criterion(self) -> nn.Module:
         return nn.NLLLoss()
 
-    def train_epoch(self, model: nn.Module, train_loader: DataLoader,
-                   optimizer: torch.optim.Optimizer, criterion: nn.Module,
-                   monitor: Any, progress_callback=None, optimizer_tags=None) -> dict[str, float]:
-        model.train()
-        total_loss = 0.0
-        total_tokens = 0
-        last_callback_time = time.time()
+    def train_step(self, model: nn.Module, batch: Any, criterion: nn.Module,
+                   optimizer: torch.optim.Optimizer, pi_config: Dict[str, Any] | None) -> tuple[torch.Tensor, float, Dict[str, float]]:
+        
+        batch = {k: v.to(self.device) for k, v in batch.items()}
+        needs_second_order = pi_config is not None
 
-        accepts_pi_signal = optimizer_tags.get("accepts_pi_signal", False) if optimizer_tags else False
-        needs_second_order = optimizer_tags.get("requires_second_order", False) if optimizer_tags else False
+        optimizer.zero_grad()
+        log_probas = model(batch["source"])
+        loss = model.loss(log_probas, batch["target"], batch["mask"])
+        loss.backward(create_graph=needs_second_order)
 
-        for batch_idx, batch in enumerate(train_loader):
-            batch = {k: v.to(self.device) for k, v in batch.items()}
-            optimizer.zero_grad()
+        optimizer.step()
 
-            log_probas = model(batch["source"])
-            loss = model.loss(log_probas, batch["target"], batch["mask"])
+        step_metrics = {}
+        try:
+            perplexity = math.exp(loss.item())
+            step_metrics[self.__class__.__name__.lower().replace('task', '')] = perplexity
+        except OverflowError:
+            step_metrics[self.__class__.__name__.lower().replace('task', '')] = float('inf')
 
-            loss.backward(create_graph=needs_second_order)
-
-            # --- PI Calculation and Optimizer Step ---
-            metrics = monitor.end_step(model, loss.item(), optimizer.param_groups[0]['lr'], log_probas)
-
-            step_args = {}
-            if accepts_pi_signal:
-                step_args['effective_gamma'] = metrics.effective_gamma
-
-            optimizer.step(**step_args)
-            # --- End of PI Calculation ---
-
-            total_loss += loss.item() * batch["mask"].sum().item()
-            total_tokens += batch["mask"].sum().item()
-
-            if progress_callback and (batch_idx + 1) % 10 == 0:
-                current_ppl = math.exp(loss.item())
-                current_time = time.time()
-                time_elapsed = current_time - last_callback_time
-                steps_processed = 10
-                steps_per_sec = steps_processed / time_elapsed if time_elapsed > 0 else 0.0
-                last_callback_time = current_time
-
-                progress_callback(
-                    epoch=monitor.current_epoch,
-                    step=batch_idx + 1,
-                    total_steps=len(train_loader),
-                    loss=loss.item(),
-                    metric=current_ppl,
-                    grad_norm=metrics.grad_norm,
-                    items_per_sec=steps_per_sec,
-                    pi=metrics.pi,
-                    effective_gamma=metrics.effective_gamma,
-                    entropy=metrics.entropy
-                )
-
-        avg_loss = total_loss / total_tokens if total_tokens > 0 else 0
-        perplexity = math.exp(avg_loss) if avg_loss > 0 else float('inf')
-
-        return {"loss": avg_loss, "perplexity": perplexity}
+        return log_probas.detach(), loss.item(), step_metrics
 
     def validate_epoch(self, model: nn.Module, valid_loader: DataLoader,
                       criterion: nn.Module) -> dict[str, float]:

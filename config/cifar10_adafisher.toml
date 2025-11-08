@@ -1,5 +1,5 @@
 [experiment]
-task = "cifar10"
+tasks = ["cifar10"]
 seed = 42
 device = "cuda"
 

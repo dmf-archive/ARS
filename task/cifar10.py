@@ -1,12 +1,15 @@
 import random
 import time
-from typing import Any
+from typing import Any, Dict
 
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
+
+
+from .base import BaseTask
 
 
 class Cutout:
@@ -50,13 +53,12 @@ class Cutout:
         return img
 
 
-class Cifar10Task:
+class Cifar10Task(BaseTask):
     def __init__(self, config: dict[str, Any]):
-        self.config = config
+        super().__init__(config)
         self.num_classes = config["model"]["num_classes"]
         self.batch_size = config["data"]["batch_size"]
         self.num_workers = config["data"]["num_workers"]
-        self.device = config["experiment"]["device"]
 
     def get_dataloaders(self) -> tuple[DataLoader, DataLoader]:
 
@@ -111,60 +113,24 @@ class Cifar10Task:
     def get_criterion(self) -> nn.Module:
         return nn.CrossEntropyLoss()
 
-    def train_epoch(self, model: nn.Module, train_loader: DataLoader,
-                   optimizer: torch.optim.Optimizer, criterion: nn.Module,
-                   monitor: Any, progress_callback=None, optimizer_tags=None) -> dict[str, float]:
-        model.train()
-        total_loss = 0.0
-        correct = 0
-        total = 0
-        last_callback_time = time.time()
+    def train_step(self, model: nn.Module, batch: Any, criterion: nn.Module,
+                   optimizer: torch.optim.Optimizer, pi_config: Dict[str, Any] | None) -> tuple[torch.Tensor, float]:
+        
+        inputs, targets = batch
+        inputs, targets = inputs.to(self.device), targets.to(self.device)
+        
+        needs_second_order = pi_config is not None
 
-        accepts_pi_signal = optimizer_tags.get("accepts_pi_signal", False) if optimizer_tags else False
-        needs_second_order = optimizer_tags.get("requires_second_order", False) if optimizer_tags else False
+        optimizer.zero_grad()
+        outputs = model(inputs)
+        loss = criterion(outputs, targets)
+        loss.backward(create_graph=needs_second_order)
 
-        for batch_idx, (inputs, targets) in enumerate(train_loader):
-            inputs, targets = inputs.to(self.device), targets.to(self.device)
-            optimizer.zero_grad()
+        # The PI calculation logic will be handled by the main training loop
+        # The optimizer step is also handled by the main loop
+        optimizer.step()
 
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
-
-            loss.backward(create_graph=needs_second_order)
-
-            # --- PI Calculation and Optimizer Step ---
-            # For CIFAR-10, we pass `outputs` (logits) to the monitor
-            metrics = monitor.end_step(model, loss.item(), optimizer.param_groups[0]['lr'], outputs)
-
-            step_args = {}
-            if accepts_pi_signal:
-                step_args['effective_gamma'] = metrics.effective_gamma
-
-            optimizer.step(**step_args)
-            # --- End of PI Calculation ---
-
-            total_loss += loss.item()
-            _, predicted = outputs.max(1)
-            total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
-
-            if progress_callback and (batch_idx + 1) % 10 == 0:
-                current_acc = 100.0 * correct / total if total > 0 else 0.0
-                current_time = time.time()
-                time_elapsed = current_time - last_callback_time
-                steps_processed = 10
-                steps_per_sec = steps_processed / time_elapsed if time_elapsed > 0 else 0.0
-                last_callback_time = current_time
-
-                progress_callback(
-                    monitor.current_epoch, batch_idx + 1, len(train_loader), loss.item(), current_acc,
-                    metrics.grad_norm, steps_per_sec, metrics.pi, metrics.effective_gamma, metrics.entropy
-                )
-
-        avg_loss = total_loss / len(train_loader)
-        accuracy = 100.0 * correct / total
-
-        return {"loss": avg_loss, "accuracy": accuracy}
+        return outputs.detach(), loss.item()
 
     def validate_epoch(self, model: nn.Module, test_loader: DataLoader,
                       criterion: nn.Module) -> dict[str, float]:
