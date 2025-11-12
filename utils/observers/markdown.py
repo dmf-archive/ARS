@@ -2,100 +2,64 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
-from utils.data import CLStore, StepMetric
+from utils.data import MetricStore, EpochMetric
 
 class MDLogger:
     def __init__(self, config: Dict[str, Any], output_dir: Path):
         self.config = config
         self.output_dir = output_dir
-        self.task_type = config["experiment"]["tasks"][0] if config["experiment"]["tasks"] else "unknown"
 
-    def on_train_end(self, store: CLStore):
-        history = store.get_full_history()
-        if not history:
+    def on_train_end(self, store: MetricStore):
+        epoch_history = store.get_flat_epoch_history()
+        if not epoch_history:
             return
 
-        # Aggregate epoch-level data from step-level history
-        epoch_data = self._aggregate_epochs(history)
-
-        # Generate and save the report
-        report = self._generate_report(epoch_data, store)
+        report = self._generate_report(epoch_history)
         report_path = self.output_dir / "summary.md"
         report_path.parent.mkdir(parents=True, exist_ok=True)
         with open(report_path, 'w') as f:
             f.write(report)
 
-    def _aggregate_epochs(self, history: List[StepMetric]) -> List[Dict[str, Any]]:
-        epochs = {}
-        for metric in history:
-            if metric.epoch not in epochs:
-                epochs[metric.epoch] = {
-                    "epoch": metric.epoch + 1,
-                    "learning_rate": metric.learning_rate,
-                    "pi": [],
-                    "effective_gamma": [],
-                    "entropy": [],
-                    "train_loss": [],
-                    "eval_metrics": metric.eval_metrics, # Takes the last one
-                }
-            epochs[metric.epoch]['pi'].append(metric.pi)
-            epochs[metric.epoch]['effective_gamma'].append(metric.effective_gamma)
-            epochs[metric.epoch]['entropy'].append(metric.entropy)
-            epochs[metric.epoch]['train_loss'].append(metric.loss)
-
-        # Average the collected lists
-        agg_epochs = []
-        for epoch_num in sorted(epochs.keys()):
-            data = epochs[epoch_num]
-            data['pi'] = self._avg_or_none(data['pi'])
-            data['effective_gamma'] = self._avg_or_none(data['effective_gamma'])
-            data['entropy'] = self._avg_or_none(data['entropy'])
-            data['train_loss'] = self._avg_or_none(data['train_loss'])
-            agg_epochs.append(data)
+    def _generate_report(self, epoch_data: List[EpochMetric]) -> str:
         
-        return agg_epochs
-
-    def _avg_or_none(self, values: List[float | None]) -> float | None:
-        valid_values = [v for v in values if v is not None]
-        return sum(valid_values) / len(valid_values) if valid_values else None
-
-    def _generate_report(self, epoch_data: List[Dict[str, Any]], store: CLStore) -> str:
-        is_cl = len(store.tasks) > 1
-        metric_name = "Perplexity" if "wikitext2" in self.task_type else "Accuracy (%)"
+        task_names = sorted(list(set(e.task_name for e in epoch_data)))
         
-        # --- Table Generation ---
-        headers = ["Epoch", "Train Loss", "Learning Rate", "PI", "Eff. Gamma", "Entropy"]
-        task_names = sorted(store.tasks[0].history[-1].eval_metrics.keys())
-        for name in task_names:
-            headers.append(f"Valid {name}")
+        headers = ["Epoch", "Task", "Train Loss", "LR", "PI", "Eff. Gamma", "Entropy", "Grad Norm"]
+        
+        metric_keys = set()
+        for epoch in epoch_data:
+            metric_keys.update(epoch.task_metrics.metrics.keys())
+        sorted_metric_keys = sorted(list(metric_keys))
+        headers.extend([f"Eval {key.capitalize()}" for key in sorted_metric_keys])
         
         table_header = "| " + " | ".join(headers) + " |"
         table_separator = "|-" + "-|-".join(["-" * len(h) for h in headers]) + "-|"
         
         table_rows = []
         for data in epoch_data:
-            row = f"| {data['epoch']} "
-            row += f"| {data['train_loss']:.4f} " if data['train_loss'] is not None else "| N/A "
-            row += f"| {data['learning_rate']:.6f} "
-            row += f"| {data['pi']:.3f} " if data['pi'] is not None else "| N/A "
-            row += f"| {data['effective_gamma']:.3f} " if data['effective_gamma'] is not None else "| N/A "
-            row += f"| {data['entropy']:.3f} " if data['entropy'] is not None else "| N/A "
-            for name in task_names:
-                metric_val = data['eval_metrics'].get(name)
-                row += f"| {metric_val:.2f} " if metric_val is not None else "| N/A "
+            row = f"| {data.global_epoch + 1} "
+            row += f"| {data.task_name} "
+            row += f"| {data.avg_train_loss:.4f} "
+            row += f"| {data.learning_rate:.6f} "
+            row += f"| {data.avg_pi:.3f} " if data.avg_pi is not None else "| N/A "
+            row += f"| {data.avg_effective_gamma:.3f} " if data.avg_effective_gamma is not None else "| N/A "
+            row += f"| {data.avg_entropy:.3f} " if data.avg_entropy is not None else "| N/A "
+            row += f"| {data.grad_norm:.4f} " if data.grad_norm is not None else "| N/A "
+            
+            for key in sorted_metric_keys:
+                metric_val = data.task_metrics.metrics.get(key)
+                row += f"| {metric_val:.2f} " if isinstance(metric_val, float) else "| N/A "
             row += "|"
             table_rows.append(row)
         table_content = "\n".join(table_rows)
 
-        # --- Summary Stats ---
-        final_metrics = epoch_data[-1]['eval_metrics']
-        best_metric_str = self._get_best_metric_summary(epoch_data, task_names)
+        final_metrics_summary = self._get_final_metrics_summary(epoch_data, task_names)
+        best_metric_summary = self._get_best_metric_summary(epoch_data, task_names, sorted_metric_keys)
 
-        # --- Report Assembly ---
         report = f"""# F3EO-Bench Experiment Report
 
 ## Configuration Summary
-```toml
+```json
 {json.dumps(self.config, indent=2)}
 ```
 
@@ -105,38 +69,25 @@ class MDLogger:
 {table_content}
 
 ## Performance Summary
-- **Best Validation Metrics**: {best_metric_str}
-- **Final Validation Metrics**: {json.dumps(final_metrics)}
+- **Best Validation Metrics**: {best_metric_summary}
+- **Final Validation Metrics**: {final_metrics_summary}
 """
-        if is_cl:
-            report += self._generate_cl_summary(store)
-
         return report
 
-    def _get_best_metric_summary(self, epoch_data, task_names):
+    def _get_best_metric_summary(self, epoch_data: List[EpochMetric], task_names: List[str], metric_keys: List[str]) -> str:
         summary = []
         for name in task_names:
-            is_ppl = 'wikitext2' in name
-            metrics = [e['eval_metrics'].get(name) for e in epoch_data if e['eval_metrics'].get(name) is not None]
-            if not metrics: continue
-            best_val = min(metrics) if is_ppl else max(metrics)
-            summary.append(f"{name}: {best_val:.2f}")
+            for key in metric_keys:
+                is_ppl = 'perplexity' in key
+                metrics = [e.task_metrics.metrics.get(key) for e in epoch_data if e.task_name == name and e.task_metrics.metrics.get(key) is not None]
+                if not metrics: continue
+                best_val = min(metrics) if is_ppl else max(metrics)
+                summary.append(f"{name} {key.capitalize()}: {best_val:.2f}")
         return ", ".join(summary)
-
-    def _generate_cl_summary(self, store: CLStore) -> str:
-        # Forgetting calculation
-        final_accs = {}
-        max_accs = {}
-        for task in store.tasks:
-            accs = [m.eval_metrics.get(task.task_name) for m in task.history if m.eval_metrics.get(task.task_name) is not None]
-            if not accs: continue
-            final_accs[task.task_name] = accs[-1]
-            max_accs[task.task_name] = max(accs)
-        
-        forgetting = {name: (max_accs[name] - final_accs[name]) / max_accs[name] for name in final_accs if max_accs.get(name, 0) > 0}
-        
-        return f"""
-## Continual Learning Summary
-- **Average Forgetting**: {sum(forgetting.values()) / len(forgetting) * 100:.2f}%
-- **Forgetting per Task**: {json.dumps({k: f'{v*100:.2f}%' for k, v in forgetting.items()})}
-"""
+    
+    def _get_final_metrics_summary(self, epoch_data: List[EpochMetric], task_names: List[str]) -> str:
+        summary = []
+        for name in task_names:
+            last_epoch_for_task = max([e for e in epoch_data if e.task_name == name], key=lambda x: x.global_epoch)
+            summary.append(f"{name}: {json.dumps(last_epoch_for_task.task_metrics.metrics)}")
+        return ", ".join(summary)

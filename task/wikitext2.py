@@ -151,36 +151,29 @@ class Wikitext2Task(BaseTask):
         return nn.NLLLoss()
 
     def train_step(self, model: nn.Module, batch: Any, criterion: nn.Module,
-                   optimizer: torch.optim.Optimizer, pi_config: Dict[str, Any] | None) -> tuple[torch.Tensor, float, Dict[str, float]]:
+                   optimizer: torch.optim.Optimizer, device: torch.device,
+                   needs_second_order: bool, accepts_pi_signal: bool,
+                   eff_gamma: float | None) -> tuple[torch.Tensor, float, Dict[str, float]]:
         
-        batch = {k: v.to(self.device) for k, v in batch.items()}
-        needs_second_order = pi_config is not None
+        batch = {k: v.to(device) for k, v in batch.items()}
 
         optimizer.zero_grad()
         log_probas = model(batch["source"])
         loss = model.loss(log_probas, batch["target"], batch["mask"])
         loss.backward(create_graph=needs_second_order)
-
         optimizer.step()
 
-        step_metrics = {}
-        try:
-            perplexity = math.exp(loss.item())
-            step_metrics[self.__class__.__name__.lower().replace('task', '')] = perplexity
-        except OverflowError:
-            step_metrics[self.__class__.__name__.lower().replace('task', '')] = float('inf')
-
-        return log_probas.detach(), loss.item(), step_metrics
+        return log_probas.detach(), loss.item(), {}
 
     def validate_epoch(self, model: nn.Module, valid_loader: DataLoader,
-                      criterion: nn.Module) -> dict[str, float]:
+                      criterion: nn.Module, device: torch.device) -> dict[str, float]:
         model.eval()
         total_loss = 0.0
         total_tokens = 0
 
         with torch.no_grad():
             for batch in valid_loader:
-                batch = {k: v.to(self.device) for k, v in batch.items()}
+                batch = {k: v.to(device) for k, v in batch.items()}
                 log_probas = model(batch["source"])
                 loss = model.loss(log_probas, batch["target"], batch["mask"])
 

@@ -61,8 +61,6 @@ class Cifar10Task(BaseTask):
         self.num_workers = config["data"]["num_workers"]
 
     def get_dataloaders(self) -> tuple[DataLoader, DataLoader]:
-
-        # 基础变换
         transform_train_list = [
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
@@ -114,26 +112,27 @@ class Cifar10Task(BaseTask):
         return nn.CrossEntropyLoss()
 
     def train_step(self, model: nn.Module, batch: Any, criterion: nn.Module,
-                   optimizer: torch.optim.Optimizer, pi_config: Dict[str, Any] | None) -> tuple[torch.Tensor, float]:
+                   optimizer: torch.optim.Optimizer, device: torch.device,
+                   needs_second_order: bool, accepts_pi_signal: bool,
+                   eff_gamma: float | None) -> tuple[torch.Tensor, float, Dict[str, float]]:
         
         inputs, targets = batch
-        inputs, targets = inputs.to(self.device), targets.to(self.device)
+        inputs, targets = inputs.to(device), targets.to(device)
         
-        needs_second_order = pi_config is not None
-
         optimizer.zero_grad()
         outputs = model(inputs)
         loss = criterion(outputs, targets)
         loss.backward(create_graph=needs_second_order)
 
-        # The PI calculation logic will be handled by the main training loop
-        # The optimizer step is also handled by the main loop
-        optimizer.step()
+        if accepts_pi_signal:
+            optimizer.step(effective_gamma=eff_gamma)
+        else:
+            optimizer.step()
 
-        return outputs.detach(), loss.item()
+        return outputs.detach(), loss.item(), {}
 
     def validate_epoch(self, model: nn.Module, test_loader: DataLoader,
-                      criterion: nn.Module) -> dict[str, float]:
+                      criterion: nn.Module, device: torch.device) -> dict[str, float]:
         model.eval()
         total_loss = 0.0
         correct = 0
@@ -141,7 +140,7 @@ class Cifar10Task(BaseTask):
 
         with torch.no_grad():
             for inputs, targets in test_loader:
-                inputs, targets = inputs.to(self.device), targets.to(self.device)
+                inputs, targets = inputs.to(device), targets.to(device)
 
                 outputs = model(inputs)
                 loss = criterion(outputs, targets)

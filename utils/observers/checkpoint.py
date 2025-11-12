@@ -2,7 +2,7 @@ from pathlib import Path
 import torch
 from typing import Any, Dict, List
 
-from utils.data import CLStore
+from utils.data import MetricStore
 
 class CheckpointSaver:
     def __init__(self, output_dir: Path, max_checkpoints: int = 3):
@@ -12,7 +12,7 @@ class CheckpointSaver:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def save(self, epoch: int, model: torch.nn.Module, optimizer: torch.optim.Optimizer,
-             scheduler: torch.optim.lr_scheduler._LRScheduler | None, store: CLStore):
+             scheduler: torch.optim.lr_scheduler._LRScheduler | None, store: MetricStore):
         
         # Note: We save the whole store, which might be large.
         # A more advanced version could save only recent history.
@@ -46,7 +46,7 @@ class CheckpointSaver:
         if not checkpoint_path.exists():
             return None
 
-        checkpoint = torch.load(checkpoint_path, map_location='cpu')
+        checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
 
         model.load_state_dict(checkpoint["model_state_dict"])
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])

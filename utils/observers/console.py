@@ -4,7 +4,7 @@ from rich.table import Table
 from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 from typing import Any, Dict
 
-from utils.data import StepMetric, CLStore
+from utils.data import StepMetric, MetricStore
 
 class ConsoleLogger:
     def __init__(self, config: Dict[str, Any]):
@@ -39,47 +39,39 @@ class ConsoleLogger:
 
     def on_step_end(self, metric: StepMetric, total_steps: int):
         self.progress.update(self.step_task_id, advance=1)
-        if metric.step_in_epoch % 10 != 0:
+        
+    def on_epoch_end(self, store: MetricStore):
+        if self.step_task_id is not None:
+            self.progress.remove_task(self.step_task_id)
+            self.step_task_id = None
+        
+        flat_history = store.get_flat_epoch_history()
+        if not flat_history:
             return
+            
+        last_metric = flat_history[-1]
 
-        msg = f"Epoch {metric.epoch+1} | Step {metric.step_in_epoch}/{total_steps} | Loss: {metric.loss:.4f}"
-        task_name = metric.task_name
-        if 'wikitext2' in task_name:
-            ppl = metric.eval_metrics.get(task_name, 0.0)
-            msg += f" | PPL: {ppl:.2f}"
-        else:
-            acc = metric.eval_metrics.get(task_name, 0.0)
-            msg += f" | Acc: {acc:.2f}%"
-
-        if metric.grad_norm is not None:
-            msg += f" | Grad: {metric.grad_norm:.4f}"
-        if metric.pi is not None:
-            msg += f" | PI: {metric.pi:.3f}"
-        if metric.effective_gamma is not None:
-            msg += f" | β: {metric.effective_gamma:.3f}"
-        if metric.entropy is not None:
-            msg += f" | H: {metric.entropy:.3f}"
-        
-        self.console.print(msg)
-
-    def on_epoch_end(self, store: CLStore):
-        last_metric = store.get_full_history()[-1]
-        
-        self.progress.remove_task(self.step_task_id)
-
-        table = Table(title=f"Epoch {last_metric.epoch+1} Results")
+        table = Table(title=f"Epoch {last_metric.global_epoch+1} Results")
         table.add_column("Task", style="cyan")
-        table.add_column("Loss", justify="right", style="magenta")
-        table.add_column("Metric", justify="right", style="green")
+        table.add_column("Train Loss", justify="right", style="magenta")
+        table.add_column("Eval Metric", justify="right", style="green")
 
-        for task_name, metrics in last_metric.eval_metrics.items():
-            is_ppl = 'wikitext2' in task_name
-            metric_str = f"{metrics:.2f}" if is_ppl else f"{metrics:.2f}%"
-            table.add_row(task_name, "N/A", metric_str)
+        for epoch_metric in store.get_history_for_task(last_metric.task_name):
+            if epoch_metric.global_epoch == last_metric.global_epoch:
+                task_name = epoch_metric.task_name
+                metrics_dict = epoch_metric.task_metrics.metrics
+                
+                metric_key = "perplexity" if "wikitext2" in task_name else "accuracy"
+                metric_val = metrics_dict.get(metric_key, "N/A")
+                metric_str = f"{metric_val:.2f}" if isinstance(metric_val, float) else "N/A"
+                if metric_key == "accuracy":
+                    metric_str += "%"
+
+                table.add_row(task_name, f"{epoch_metric.avg_train_loss:.4f}", metric_str)
 
         self.console.print(table)
-        self.console.print(f"[dim]LR: {last_metric.learning_rate:.6f}[/dim]")
+        self.console.print(f"[dim]LR: {last_metric.learning_rate:.6f} | PI: {last_metric.avg_pi:.3f} | Grad: {last_metric.grad_norm:.4f}[/dim]")
 
-    def on_train_end(self, store: CLStore):
+    def on_train_end(self, store: MetricStore):
         self.progress.stop()
         self.console.print("\n[bold green]Training completed![/bold green]")

@@ -7,3 +7,6 @@
 [submodule "ref/Omnigrok"]
 	path = ref/Omnigrok
 	url = https://github.com/KindXiaoming/Omnigrok.git
+[submodule "ref/muon"]
+	path = ref/muon
+	url = https://github.com/KellerJordan/Muon.git

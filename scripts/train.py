@@ -1,19 +1,17 @@
 import argparse
 import importlib
 import sys
-import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import toml
 import torch
 
-from utils.data import CLStore, StepMetric
+from utils.data import MetricStore, EpochMetric, StepMetric, TaskMetrics
 from utils.observers.console import ConsoleLogger
 from utils.observers.markdown import MDLogger
 from utils.observers.checkpoint import CheckpointSaver
-from utils.early_stop import EarlyStop
-from utils.metrics import PICalculator, compute_grad_norm # Import from new metrics module
+from utils.metrics import PICalculator, compute_grad_norm
 
 def load_config(config_path: Path) -> dict:
     with open(config_path) as f:
@@ -56,25 +54,20 @@ def train(config: Dict[str, Any], config_name: str):
 
     task_names = config["experiment"]["tasks"]
     tasks = {name: get_task_class(name)(config) for name in task_names}
-    # Assume a single model and criterion for now
     model = tasks[task_names[0]].get_model().to(device)
     criterion = tasks[task_names[0]].get_criterion()
     optimizer, optimizer_tags, pi_config = create_optimizer(model, config)
     scheduler = create_scheduler(optimizer, config)
 
-    # --- New Unified Architecture ---
-    store = CLStore()
+    store = MetricStore()
     console_logger = ConsoleLogger(config)
     md_logger = MDLogger(config, output_dir)
     ckpt_saver = CheckpointSaver(output_dir)
-
-    # --- Force-enable PI calculation for all tasks ---
-    # If pi_config is not provided by the optimizer, use defaults.
+    
     pi_gamma = pi_config.get("gamma", 1.0) if pi_config else 1.0
     pi_alpha = pi_config.get("alpha", 1.0) if pi_config else 1.0
     pi_ema_beta = pi_config.get("ema_beta") if pi_config else None
     pi_calculator = PICalculator(gamma=pi_gamma, alpha=pi_alpha, ema_beta=pi_ema_beta)
-    # ---
 
     console_logger.on_train_begin(str(output_dir))
 
@@ -84,79 +77,86 @@ def train(config: Dict[str, Any], config_name: str):
         start_epoch = checkpoint["epoch"] + 1
         store = checkpoint["store"]
         print(f"Resuming training from epoch {start_epoch}")
-    else:
-        store = CLStore()
     
-    # Ensure get_dataloaders() is called only once per task to avoid duplicate logs
-    train_loaders = {}
-    valid_loaders = {}
-    for name, task in tasks.items():
-        train_loader, valid_loader = task.get_dataloaders()
-        train_loaders[name] = train_loader
-        valid_loaders[name] = valid_loader
+    train_loaders = {name: task.get_dataloaders()[0] for name, task in tasks.items()}
+    valid_loaders = {name: task.get_dataloaders()[1] for name, task in tasks.items()}
     
     global_step = 0
     epochs = config["train"]["epochs"]
 
-    for task_name in task_names:
-        current_task = tasks[task_name]
-        current_train_loader = train_loaders[task_name]
-        total_steps = len(current_train_loader)
+    for global_epoch in range(start_epoch, epochs):
+        model.train()
         
-        for epoch in range(start_epoch, epochs):
-            model.train()
-            console_logger.on_epoch_begin(epoch, total_steps)
+        for task_name in task_names:
+            current_task = tasks[task_name]
+            current_train_loader = train_loaders[task_name]
+            task_epoch = len(store.get_history_for_task(task_name))
+            
+            console_logger.on_epoch_begin(global_epoch, len(current_train_loader))
+
+            epoch_logits_list = []
+            epoch_loss_sum = 0.0
+            epoch_grad_norm_list = []
 
             for step, batch in enumerate(current_train_loader):
-                logits, loss, step_metrics = current_task.train_step(model, batch, criterion, optimizer, pi_config)
-                
-                grad_norm = compute_grad_norm(model)
-                
-                pi, eff_gamma, entropy = None, None, None
-                if pi_calculator and logits is not None:
-                    with torch.no_grad():
-                        probas = torch.softmax(logits, dim=-1)
-                        log_probas = torch.log_softmax(logits, dim=-1)
-                        entropy_tensor = -(probas * log_probas).sum(dim=-1).mean()
-                        entropy = entropy_tensor.item()
-                        _, pi = pi_calculator.calculate_pi(entropy_tensor, grad_norm)
-                        if pi is not None:
-                            eff_gamma = -torch.log(1.0 - torch.tensor(pi) + pi_calculator.eps).item()
+                latest_task_epoch_metric = store.get_latest_epoch_for_task(task_name)
+                eff_gamma = latest_task_epoch_metric.avg_effective_gamma if latest_task_epoch_metric else None
 
-                metric = StepMetric(
-                    global_step=global_step,
-                    epoch=epoch,
-                    step_in_epoch=step,
-                    task_name=task_name,
-                    loss=loss,
-                    eval_metrics=step_metrics,
-                    grad_norm=grad_norm,
-                    learning_rate=optimizer.param_groups[0]['lr'],
-                    pi=pi, effective_gamma=eff_gamma, entropy=entropy,
-                    timestamp=time.time()
+                logits, loss, _ = current_task.train_step(
+                    model=model, batch=batch, criterion=criterion, optimizer=optimizer, device=device,
+                    needs_second_order=optimizer_tags.get("requires_second_order", False),
+                    accepts_pi_signal=optimizer_tags.get("accepts_pi_signal", False),
+                    eff_gamma=eff_gamma
                 )
-                store.add_step(metric)
-                console_logger.on_step_end(metric, total_steps)
+                
+                step_metric = StepMetric(
+                    task_name=task_name, global_step=global_step, task_epoch=task_epoch,
+                    step_in_epoch=step, loss=loss, learning_rate=optimizer.param_groups[0]['lr']
+                )
+                store.add_step(step_metric)
+                console_logger.on_step_end(step_metric, len(current_train_loader))
+                
+                if logits is not None:
+                     epoch_logits_list.append(logits.detach())
+                epoch_loss_sum += loss
+                epoch_grad_norm_list.append(compute_grad_norm(model))
                 global_step += 1
 
             model.eval()
-            all_eval_metrics = {}
             with torch.no_grad():
-                for eval_task_name, eval_loader in valid_loaders.items():
-                    eval_task = tasks[eval_task_name]
-                    results = eval_task.validate_epoch(model, eval_loader, criterion)
-                    metric_key = "perplexity" if "wikitext2" in eval_task_name else "accuracy"
-                    all_eval_metrics[eval_task_name] = results[metric_key]
+                task_metrics_dict = current_task.validate_epoch(model, valid_loaders[task_name], criterion, device)
+            task_metrics = TaskMetrics(metrics=task_metrics_dict)
+            model.train()
+
+            avg_train_loss = epoch_loss_sum / len(current_train_loader)
+            avg_grad_norm = sum(epoch_grad_norm_list) / len(epoch_grad_norm_list) if epoch_grad_norm_list else None
             
-            last_metric = store.get_full_history()[-1]
-            last_metric.eval_metrics.update(all_eval_metrics)
-            
-            console_logger.on_epoch_end(store)
-            
-            ckpt_saver.save(epoch, model, optimizer, scheduler, store)
-            
-            if scheduler:
-                scheduler.step()
+            avg_entropy, avg_pi, avg_eff_gamma = None, None, None
+            if pi_calculator and epoch_logits_list:
+                with torch.no_grad():
+                    all_logits = torch.cat(epoch_logits_list, dim=0)
+                    probas = torch.softmax(all_logits, dim=-1)
+                    entropy_tensor = -(probas * torch.log_softmax(all_logits, dim=-1)).sum(dim=-1).mean()
+                    avg_entropy = entropy_tensor.item()
+                    
+                    if avg_grad_norm is not None:
+                        _, avg_pi = pi_calculator.calculate_pi(torch.tensor(avg_entropy), torch.tensor(avg_grad_norm))
+                        if avg_pi is not None:
+                            avg_eff_gamma = -torch.log(1.0 - torch.tensor(avg_pi) + pi_calculator.eps).item()
+
+            epoch_metric = EpochMetric(
+                task_name=task_name, task_epoch=task_epoch, global_epoch=global_epoch,
+                avg_train_loss=avg_train_loss, task_metrics=task_metrics,
+                avg_pi=avg_pi, avg_effective_gamma=avg_eff_gamma, avg_entropy=avg_entropy,
+                grad_norm=avg_grad_norm, learning_rate=optimizer.param_groups[0]['lr']
+            )
+            store.add_epoch(epoch_metric)
+
+        console_logger.on_epoch_end(store)
+        ckpt_saver.save(global_epoch, model, optimizer, scheduler, store)
+        
+        if scheduler:
+            scheduler.step()
 
     md_logger.on_train_end(store)
     console_logger.on_train_end(store)
