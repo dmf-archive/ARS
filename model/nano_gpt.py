@@ -1,4 +1,3 @@
-import math
 
 import numpy as np
 import torch
@@ -10,7 +9,7 @@ from model.embeddings import GPT1Embedding
 
 class MultiHeadedAttention(nn.Module):
     def __init__(self, head_size, num_heads, sequence_length):
-        super(MultiHeadedAttention, self).__init__()
+        super().__init__()
         self.head_size = head_size
         self.num_heads = num_heads
         self.sequence_length = sequence_length
@@ -23,112 +22,30 @@ class MultiHeadedAttention(nn.Module):
         self.weights_Y = nn.Linear(in_features=layer_size, out_features=layer_size)
         # ==========================
 
-    def get_attention_weights(self, queries, keys):
-        """Compute the attention weights.
-
-        This computes the attention weights for all the sequences and all the
-        heads in the batch. For a single sequence and a single head (for
-        simplicity), if Q are the queries (matrix of size `(sequence_length, head_size)`),
-        and K are the keys (matrix of size `(sequence_length, head_size)`), then
-        the attention weights are computed as
-
-            weights = softmax(Q * K^{T} / sqrt(head_size))
-
-        Here "*" is the matrix multiplication. Your attention weights must
-        take into account the fact that we have a causal language model, i.e.
-        there should be no influence from the future, attention is only
-        computed on the past. See Lecture 06, slides 19-24.
-
-        Parameters
-        ----------
-        queries (`torch.FloatTensor` of shape `(batch_size, num_heads, sequence_length, head_size)`)
-            Tensor containing the queries for all the positions in the sequences
-            and all the heads. For example, `queries[1, 3, 5]` is the query of
-            the 4th head (index 3) for the 6th token (index 5) in the 2nd
-            sequence (index 1) in the batch (it is a vector of size `head_size`).
-
-        keys (`torch.FloatTensor` of shape `(batch_size, num_heads, sequence_length, head_size)`)
-            Tensor containing the keys for all the positions in the sequences
-            and all the heads. For example, `keys[0, 2, 4]` is the key of the
-            3rd head (index 2) for the 5th token (index 4) in the 1st sequence
-            (index 0) in the batch (it is a vector of size `head_size`).
-
-        Returns
-        -------
-        attention_weights (`torch.FloatTensor` of shape `(batch_size, num_heads, sequence_length, sequence_length)`)
-            Tensor containing the attention weights for all the heads and all
-            the sequences in the batch. For example, `attention_weights[1, 3, 5, 7]`
-            is the attention weights from the 8th token (index 7) on the 6th
-            token (index 5) of the 4th head (index 3) in the 2nd sequence
-            (index 1) in the batch. Note that because we have a causal language
-            model here, `attention_weights[1, 3, 5, 7] == 0`, since the 8th token
-            should not influence on the 6th token (7 > 5).
-        """
-
-        # ==========================
-        interaction_score = torch.matmul(queries, keys.transpose(-2, -1)) / math.sqrt(self.head_size)
-
-        causal_mask = torch.tril(torch.ones(self.sequence_length, self.sequence_length, device=queries.device).
-                                 view(1, 1,  self.sequence_length,  self.sequence_length))
-
-        causal_interaction_score = interaction_score * causal_mask - 1e4 * (1 - causal_mask)
-        attention_weights = F.softmax(causal_interaction_score, dim=-1)
-        # ==========================
-        return attention_weights
-
     def apply_attention(self, queries, keys, values):
-        """Apply the attention.
-
-        This computes the output of the attention, for all the sequences and
-        all the heads in the batch. For a single sequence and a single head
-        (for simplicity), if Q are the queries (matrix of size `(sequence_length, head_size)`),
-        K are the keys (matrix of size `(sequence_length, head_size)`), and V are
-        the values (matrix of size `(sequence_length, head_size)`), then the ouput
-        of the attention is given by
-
-            weights = softmax(Q * K^{T} / sqrt(head_size))
-            attended_values = weights * V
-            outputs = concat(attended_values)
-
-        Here "*" is the matrix multiplication, and "concat" is the operation
-        that concatenates the attended values of all the heads (see the
-        `merge_heads` function). See Lecture 06, slides 19-24.
+        """Apply the attention using scaled_dot_product_attention for efficiency.
 
         Parameters
         ----------
         queries (`torch.FloatTensor` of shape `(batch_size, num_heads, sequence_length, head_size)`)
             Tensor containing the queries for all the positions in the sequences
-            and all the heads. For example, `queries[1, 3, 5]` is the query of
-            the 4th head (index 3) for the 6th token (index 5) in the 2nd
-            sequence (index 1) in the batch (it is a vector of size `head_size`).
-
+            and all the heads.
         keys (`torch.FloatTensor` of shape `(batch_size, num_heads, sequence_length, head_size)`)
             Tensor containing the keys for all the positions in the sequences
-            and all the heads. For example, `keys[0, 2, 4]` is the key of the
-            3rd head (index 2) for the 5th token (index 4) in the 1st sequence
-            (index 0) in the batch (it is a vector of size `head_size`).
-
+            and all the heads.
         values (`torch.FloatTensor` of shape `(batch_size, num_heads, sequence_length, head_size)`)
             Tensor containing the values for all the positions in the sequences
-            and all the heads. For example, `values[1, 3, 5]` is the key of the
-            4th head (index 3) for the 6th token (index 5) in the 2nd sequence
-            (index 1) in the batch (it is a vector of size `head_size`).
+            and all the heads.
 
         Returns
         -------
         outputs (`torch.FloatTensor` of shape `(batch_size, sequence_length, num_heads * head_size)`)
             Tensor containing the concatenated outputs of the attention for all
-            the sequences in the batch, and all positions in each sequence. For
-            example, `outputs[0, 2]` contains the output of the attention
-            (concatenated for all heads) for the 3rd token (index 2) of the 1st
-            sequence in the batch (index 0).
+            the sequences in the batch, and all positions in each sequence.
         """
-
-        # ==========================
-        A = self.get_attention_weights(queries, keys)
-        h = torch.matmul(A, values)
+        # Use is_causal=True to apply a causal mask efficiently.
+        h = F.scaled_dot_product_attention(queries, keys, values, is_causal=True)
         return self.merge_heads(h)
-        # ==========================
 
 
     def split_heads(self, tensor):
@@ -245,7 +162,7 @@ class Block(nn.Module):
         create a layer of the transformer, with normalization and skip-connections.
         See Lecture 06, slide 33.
         """
-        super(Block, self).__init__()
+        super().__init__()
         self.head_size = head_size
         self.mlp_hidden_size = mlp_hidden_size
         self.num_heads = num_heads
@@ -281,7 +198,7 @@ class MiniGPT1(nn.Module):
             _tokens_embedding_weight=None,
             _positional_embedding_weight=None,
     ):
-        super(MiniGPT1, self).__init__()
+        super().__init__()
         self.vocabulary_size = vocabulary_size
         self.embedding_size = embedding_size
         self.sequence_length = sequence_length

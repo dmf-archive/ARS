@@ -34,7 +34,7 @@ class F3EO_raw(Optimizer):
                         weight_decay=weight_decay, amsgrad=amsgrad, maximize=maximize,
                         orthogonalize=orthogonalize, meta_grad_clip_norm=meta_grad_clip_norm)
 
-        super(F3EO_raw, self).__init__(params, defaults)
+        super().__init__(params, defaults)
 
     def step(self, closure=None, effective_gamma=None):
         loss = None

@@ -6,7 +6,7 @@ import torch.optim as optim
 from .kfac_utils import ComputeCovA, ComputeCovG, update_running_stat
 
 
-class KFACOptimizer(optim.Optimizer):
+class DiagKFACOptimizer(optim.Optimizer):
     def __init__(self,
                  model,
                  lr=0.001,
@@ -26,7 +26,6 @@ class KFACOptimizer(optim.Optimizer):
             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
         defaults = dict(lr=lr, momentum=momentum, damping=damping,
                         weight_decay=weight_decay)
-        # TODO (CW): KFAC optimizer now only support model as input
         super().__init__(model.parameters(), defaults)
         self.CovAHandler = ComputeCovA()
         self.CovGHandler = ComputeCovG()
@@ -43,8 +42,6 @@ class KFACOptimizer(optim.Optimizer):
         self.steps = 0
 
         self.m_aa, self.m_gg = {}, {}
-        self.Q_a, self.Q_g = {}, {}
-        self.d_a, self.d_g = {}, {}
         self.stat_decay = stat_decay
 
         self.kl_clip = kl_clip
@@ -53,74 +50,49 @@ class KFACOptimizer(optim.Optimizer):
 
     def _save_input(self, module, input):
         if torch.is_grad_enabled() and self.steps % self.TCov == 0:
-            aa = self.CovAHandler(input[0].data, module)
-            # Initialize buffers
+            # We only need the diagonal of the covariance matrix
+            a = input[0].data
+            a = a.reshape(-1, a.size(-1))
+            if module.bias is not None:
+                a = torch.cat([a, a.new(a.size(0), 1).fill_(1)], 1)
+
+            aa_diag = (a * a).sum(dim=0)
+
             if self.steps == 0:
-                self.m_aa[module] = torch.diag(aa.new(aa.size(0)).fill_(1))
-            update_running_stat(aa, self.m_aa[module], self.stat_decay)
+                self.m_aa[module] = torch.ones_like(aa_diag)
+            update_running_stat(aa_diag, self.m_aa[module], self.stat_decay)
 
     def _save_grad_output(self, module, grad_input, grad_output):
-        # Accumulate statistics for Fisher matrices
         if self.steps % self.TCov == 0:
-            gg = self.CovGHandler(grad_output[0].data, module, self.batch_averaged)
-            # Initialize buffers
+            g = grad_output[0].data
+            g = g.reshape(-1, g.size(-1))
+
+            gg_diag = (g * g).sum(dim=0)
+
             if self.steps == 0:
-                self.m_gg[module] = torch.diag(gg.new(gg.size(0)).fill_(1))
-            update_running_stat(gg, self.m_gg[module], self.stat_decay)
+                self.m_gg[module] = torch.ones_like(gg_diag)
+            update_running_stat(gg_diag, self.m_gg[module], self.stat_decay)
 
     def _prepare_model(self):
-        count = 0
         for module in self.model.modules():
             classname = module.__class__.__name__
             if classname in self.known_modules:
                 self.modules.append(module)
                 module.register_forward_pre_hook(self._save_input)
                 module.register_full_backward_hook(self._save_grad_output)
-                count += 1
-
-    def _update_inv(self, m):
-        """Do eigen decomposition for computing inverse of the ~ fisher.
-        :param m: The layer
-        :return: no returns.
-        """
-        eps = 1e-10  # for numerical stability
-        self.d_a[m], self.Q_a[m] = torch.linalg.eigh(
-            self.m_aa[m])
-        self.d_g[m], self.Q_g[m] = torch.linalg.eigh(
-            self.m_gg[m])
-
-        self.d_a[m].mul_((self.d_a[m] > eps).float())
-        self.d_g[m].mul_((self.d_g[m] > eps).float())
-
-    @staticmethod
-    def _get_matrix_form_grad(m, classname):
-        """
-        :param m: the layer
-        :param classname: the class name of the layer
-        :return: a matrix form of the gradient. it should be a [output_dim, input_dim] matrix.
-        """
-        if classname == 'Conv2d':
-            p_grad_mat = m.weight.grad.data.view(m.weight.grad.data.size(0), -1)  # n_filters * (in_c * kw * kh)
-        else:
-            p_grad_mat = m.weight.grad.data
-        if m.bias is not None:
-            p_grad_mat = torch.cat([p_grad_mat, m.bias.grad.data.view(-1, 1)], 1)
-        return p_grad_mat
 
     def _get_natural_grad(self, m, p_grad_mat, damping):
-        """
-        :param m:  the layer
-        :param p_grad_mat: the gradients in matrix form
-        :return: a list of gradients w.r.t to the parameters in `m`
-        """
         # p_grad_mat is of output_dim * input_dim
-        # inv((ss')) p_grad_mat inv(aa') = [ Q_g (1/R_g) Q_g^T ] @ p_grad_mat @ [Q_a (1/R_a) Q_a^T]
-        v1 = self.Q_g[m].t() @ p_grad_mat @ self.Q_a[m]
-        v2 = v1 / (self.d_g[m].unsqueeze(1) * self.d_a[m].unsqueeze(0) + damping)
-        v = self.Q_g[m] @ v2 @ self.Q_a[m].t()
+        # F_inv = (A_inv x G_inv)
+        # natural_grad = F_inv @ grad
+        A_inv_diag = 1.0 / (self.m_aa[m] + damping)
+        G_inv_diag = 1.0 / (self.m_gg[m] + damping)
+
+        # Kronecker product with diagonal matrices is equivalent to outer product
+        # and then element-wise multiplication with the gradient matrix.
+        v = p_grad_mat * (G_inv_diag.unsqueeze(1) @ A_inv_diag.unsqueeze(0))
+
         if m.bias is not None:
-            # we always put gradient w.r.t weight in [0]
-            # and w.r.t bias in [1]
             v = [v[:, :-1], v[:, -1:]]
             v[0] = v[0].view(m.weight.grad.data.size())
             v[1] = v[1].view(m.bias.grad.data.size())
@@ -130,14 +102,14 @@ class KFACOptimizer(optim.Optimizer):
         return v
 
     def _kl_clip_and_update_grad(self, updates, lr):
-        # do kl clip
         vg_sum = 0
         for m in self.modules:
             v = updates[m]
             vg_sum += (v[0] * m.weight.grad.data * lr ** 2).sum().item()
             if m.bias is not None:
                 vg_sum += (v[1] * m.bias.grad.data * lr ** 2).sum().item()
-        nu = min(1.0, math.sqrt(self.kl_clip / vg_sum))
+
+        nu = min(1.0, math.sqrt(self.kl_clip / (vg_sum + 1e-8)))
 
         for m in self.modules:
             v = updates[m]
@@ -147,9 +119,17 @@ class KFACOptimizer(optim.Optimizer):
                 m.bias.grad.data.copy_(v[1])
                 m.bias.grad.data.mul_(nu)
 
+    @staticmethod
+    def _get_matrix_form_grad(m, classname):
+        if classname == 'Conv2d':
+            p_grad_mat = m.weight.grad.data.reshape(m.weight.grad.data.size(0), -1)
+        else:
+            p_grad_mat = m.weight.grad.data
+        if m.bias is not None:
+            p_grad_mat = torch.cat([p_grad_mat, m.bias.grad.data.view(-1, 1)], 1)
+        return p_grad_mat
+
     def _step(self, closure):
-        # FIXME (CW): Modified based on SGD (removed nestrov and dampening in momentum.)
-        # FIXME (CW): 1. no nesterov, 2. buf.mul_(momentum).add_(1 <del> - dampening </del>, d_p)
         for group in self.param_groups:
             weight_decay = group['weight_decay']
             momentum = group['momentum']
@@ -158,7 +138,7 @@ class KFACOptimizer(optim.Optimizer):
                 if p.grad is None:
                     continue
                 d_p = p.grad.data
-                if weight_decay != 0 and self.steps >= 20 * self.TCov:
+                if weight_decay != 0:
                     d_p.add_(p.data, alpha=weight_decay)
                 if momentum != 0:
                     param_state = self.state[p]
@@ -173,19 +153,17 @@ class KFACOptimizer(optim.Optimizer):
                 p.data.add_(d_p, alpha=-group['lr'])
 
     def step(self, closure=None):
-        # FIXME(CW): temporal fix for compatibility with Official LR scheduler.
         group = self.param_groups[0]
         lr = group['lr']
         damping = group['damping']
+
         updates = {}
         for m in self.modules:
             classname = m.__class__.__name__
-            if self.steps % self.TInv == 0:
-                self._update_inv(m)
             p_grad_mat = self._get_matrix_form_grad(m, classname)
             v = self._get_natural_grad(m, p_grad_mat, damping)
             updates[m] = v
-        self._kl_clip_and_update_grad(updates, lr)
 
+        self._kl_clip_and_update_grad(updates, lr)
         self._step(closure)
         self.steps += 1

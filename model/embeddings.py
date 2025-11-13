@@ -13,7 +13,7 @@ class GPT1Embedding(nn.Module):
         _positional_embedding_weight=None,
     ):
 
-        super(GPT1Embedding, self).__init__()
+        super().__init__()
         self.vocabulary_size = vocabulary_size
         self.embedding_size = embedding_size
         self.sequence_length = sequence_length

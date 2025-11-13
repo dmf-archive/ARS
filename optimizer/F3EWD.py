@@ -32,7 +32,7 @@ class F3EWD(Optimizer):
                         gamma=gamma)
 
         self.single_gpu = single_gpu
-        super(F3EWD, self).__init__(params, defaults)
+        super().__init__(params, defaults)
         self.last_log_pi = 0.0
         self.last_adaptive_wd = 0.0
         self.pi_step = 0
@@ -40,7 +40,7 @@ class F3EWD(Optimizer):
 
     def step(self, closure=None, pi_object=None):
         """Performs a single optimization step.
-        
+
         Args:
             closure: A closure that reevaluates the model and returns the loss.
             pi_object: Optional external PI signal. If provided, it overrides

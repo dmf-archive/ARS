@@ -1,27 +1,38 @@
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+import torch
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import (
     BarColumn,
     Progress,
+    TaskID,
     TextColumn,
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
 from rich.table import Table
 
-from utils.data import MetricStore, StepMetric
+from .base import Callback
+
+if TYPE_CHECKING:
+    from utils.data import MetricStore, StepMetric
 
 
-class ConsoleLogger:
+class ConsoleLogger(Callback):
     def __init__(self, config: dict[str, Any]):
         self.console = Console()
         self.config = config
-        self.progress = None
-        self.step_task_id = None
+        self.progress: Progress | None = None
+        self.step_task_id: TaskID | None = None
 
-    def on_train_begin(self, output_dir: str):
+    def on_train_end(self, store: "MetricStore", **kwargs):
+        if self.progress is not None:
+            self.progress.stop()
+        self.console.print("\n[bold green]Training completed![/bold green]")
+
+    def on_train_begin(self, store: "MetricStore", **kwargs):
+        output_dir = kwargs.get("output_dir", "N/A")
         self.console.print(Panel.fit(
             f"[bold cyan]Tasks:[/bold cyan] {', '.join(self.config['experiment']['tasks'])}\n"
             f"[bold cyan]Model:[/bold cyan] {self.config['model']['arch']}\n"
@@ -40,16 +51,27 @@ class ConsoleLogger:
             TimeElapsedColumn(),
             console=self.console
         )
+        assert self.progress is not None
         self.progress.start()
 
-    def on_epoch_begin(self, epoch: int, total_steps: int):
+    def on_epoch_begin(self, epoch: int, total_steps: int, **kwargs):
+        assert self.progress is not None
+        assert self.progress is not None
+        assert self.progress is not None
         self.step_task_id = self.progress.add_task(f"Epoch {epoch+1}", total=total_steps)
 
-    def on_step_end(self, metric: StepMetric, total_steps: int):
+    def on_step_end(self, step_metric: "StepMetric", total_steps: int, **kwargs):
+        assert self.progress is not None
+        assert self.step_task_id is not None
+        assert self.progress is not None
+        assert self.step_task_id is not None
+        assert self.progress is not None
+        assert self.step_task_id is not None
         self.progress.update(self.step_task_id, advance=1)
 
-    def on_epoch_end(self, store: MetricStore):
+    def on_epoch_end(self, store: "MetricStore", **kwargs):
         if self.step_task_id is not None:
+            assert self.progress is not None
             self.progress.remove_task(self.step_task_id)
             self.step_task_id = None
 
@@ -85,6 +107,13 @@ class ConsoleLogger:
             pi_str = f"{getattr(last_metric, 'avg_pi', 'N/A')}"
         self.console.print(f"[dim]LR: {last_metric.learning_rate:.6f} | PI: {pi_str} | Grad: {last_metric.grad_norm:.4f}[/dim]")
 
-    def on_train_end(self, store: MetricStore):
-        self.progress.stop()
-        self.console.print("\n[bold green]Training completed![/bold green]")
+    def on_step_begin(self, step: int, **kwargs):
+        pass
+
+    def save(self, epoch: int, model: "torch.nn.Module", optimizer: "torch.optim.Optimizer",
+             scheduler: "torch.optim.lr_scheduler._LRScheduler | None", store: "MetricStore", **kwargs):
+        pass
+
+    def load(self, path: str, model: "torch.nn.Module", optimizer: "torch.optim.Optimizer",
+             scheduler: "torch.optim.lr_scheduler._LRScheduler | None", **kwargs) -> dict | None:
+        return None

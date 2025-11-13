@@ -1,5 +1,6 @@
 import math
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -7,6 +8,7 @@ import torch
 import torch.nn as nn
 from datasets import load_dataset
 from tokenizers import Tokenizer, decoders, models, pre_tokenizers, trainers
+from torch.nn.attention import SDPBackend, sdpa_kernel
 from torch.utils.data import DataLoader, Dataset
 
 from .base import BaseTask
@@ -147,22 +149,69 @@ class Wikitext2Task(BaseTask):
 
     def get_criterion(self) -> nn.Module:
         return nn.NLLLoss()
+    def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """
+        Implements model-specific parameter grouping for Wikitext2 task.
+        This is crucial for optimizers like DiagFOG or Muon that apply
+        different optimization strategies to different parts of the model.
+        """
+        # This logic is specific to the nano_gpt model architecture
+        hidden_weights = [
+            p for n, p in model.named_parameters()
+            if p.ndim >= 2 and 'transformer.h' in n
+        ]
+        non_hidden_weights = [
+            p for n, p in model.named_parameters()
+            if not (p.ndim >= 2 and 'transformer.h' in n)
+        ]
+
+        # The optimizer creation logic in train.py will populate the
+        # specific hyperparameters for each group. Here, we just define the
+        # parameter sets.
+        param_groups = [
+            {'params': hidden_weights, 'use_diag_fog': True},
+            {'params': non_hidden_weights, 'use_diag_fog': False},
+        ]
+
+        return param_groups
+
+
+    @contextmanager
+    def _maybe_efficient_attention(self, needs_second_order: bool):
+        """
+        Context manager to enable efficient attention backend if the optimizer
+        does not require second-order gradients.
+        Uses the non-deprecated torch.nn.attention.sdpa_kernel API.
+        """
+        if needs_second_order:
+            # Use the original, memory-intensive but second-order-compatible backend
+            with sdpa_kernel(backends=[SDPBackend.MATH]):
+                yield
+        else:
+            # Use the memory-efficient backend for first-order optimizers
+            with sdpa_kernel(backends=[SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION]):
+                yield
 
     def train_step(self, model: nn.Module, batch: Any, criterion: nn.Module,
                    optimizer: torch.optim.Optimizer, device: torch.device,
-                   needs_second_order: bool, accepts_pi_signal: bool,
-                   pi_object=None) -> tuple[torch.Tensor, float, dict[str, float]]:
+                   needs_second_order: bool) -> tuple[torch.Tensor, float, dict[str, float]]:
 
         batch = {k: v.to(device) for k, v in batch.items()}
 
         optimizer.zero_grad()
-        log_probas = model(batch["source"])
-        loss = model.loss(log_probas, batch["target"], batch["mask"])
+        with self._maybe_efficient_attention(needs_second_order):
+            log_probas = model(batch["source"])
+            # Reshape for NLLLoss: flatten batch and sequence dimensions
+            # Input: [batch_size, sequence_length, vocab_size] -> [batch_size * sequence_length, vocab_size]
+            # Target: [batch_size, sequence_length] -> [batch_size * sequence_length]
+            batch_size, seq_len, vocab_size = log_probas.shape
+            log_probas_flat = log_probas.view(-1, vocab_size)
+            target_flat = batch["target"].view(-1)
+            loss = criterion(log_probas_flat, target_flat)
         loss.backward(create_graph=needs_second_order)
-        if accepts_pi_signal:
-            optimizer.step(pi_object=pi_object)
-        else:
-            optimizer.step()
+
+        # The decision to pass effective_gamma is now handled by the Trainer
+        optimizer.step()
 
         return log_probas.detach(), loss.item(), {}
 
@@ -176,7 +225,11 @@ class Wikitext2Task(BaseTask):
             for batch in valid_loader:
                 batch = {k: v.to(device) for k, v in batch.items()}
                 log_probas = model(batch["source"])
-                loss = model.loss(log_probas, batch["target"], batch["mask"])
+                # Reshape for NLLLoss: flatten batch and sequence dimensions
+                batch_size, seq_len, vocab_size = log_probas.shape
+                log_probas_flat = log_probas.view(-1, vocab_size)
+                target_flat = batch["target"].view(-1)
+                loss = criterion(log_probas_flat, target_flat)
 
                 total_loss += loss.item() * batch["mask"].sum().item()
                 total_tokens += batch["mask"].sum().item()

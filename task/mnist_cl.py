@@ -68,11 +68,11 @@ class MnistClTask(BaseTask):
         return (pred == targets).float().mean().item() * 100.0
 
     def train_step(self, model: nn.Module, batch: Any, criterion: nn.Module,
-                   optimizer: torch.optim.Optimizer, pi_config: dict[str, Any] | None) -> tuple[torch.Tensor, float]:
-        data, target = batch
-        data, target = data.to(self.device), target.to(self.device)
+                   optimizer: torch.optim.Optimizer, device: torch.device,
+                   needs_second_order: bool) -> tuple[torch.Tensor, float, dict[str, float]]:
 
-        needs_second_order = pi_config is not None
+        data, target = batch
+        data, target = data.to(device), target.to(device)
 
         optimizer.zero_grad()
         logits = model(data.unsqueeze(1))
@@ -80,17 +80,16 @@ class MnistClTask(BaseTask):
         loss.backward(create_graph=needs_second_order)
         optimizer.step()
 
-        return logits.detach(), loss.item()
-
+        return logits.detach(), loss.item(), {}
     def validate_epoch(self, model: nn.Module, test_loader: DataLoader,
-                       criterion: nn.Module) -> dict[str, float]:
+                       criterion: nn.Module, device: torch.device) -> dict[str, float]:
         model.eval()
         total_loss = 0.0
         correct = 0
         total = 0
         with torch.no_grad():
             for data, target in test_loader:
-                data, target = data.to(self.device), target.to(self.device)
+                data, target = data.to(device), target.to(device)
                 logits = model(data.unsqueeze(1))
                 loss = criterion(logits, target)
                 total_loss += loss.item()

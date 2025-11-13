@@ -9,7 +9,7 @@ num_classes = 10
 
 [data]
 batch_size = 256   # 对齐AdaFisher
-num_workers = 5    # 对齐AdaFisher
+num_workers = 0    # 禁用多进程以进行调试
 aug = true         # 启用数据增强
 cutout = true      # 启用cutout增强
 n_holes = 1        # cutout参数
@@ -25,7 +25,7 @@ Lambda = 1e-3       # AdaFisher 特有参数，来自论文
 TCov = 10           # AdaFisher 特有参数，论文默认值
 
 [train]
-epochs = 50
+epochs = 10
 log_every = 10
 ckpt_every = 50
 

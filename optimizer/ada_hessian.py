@@ -37,7 +37,7 @@ class Adahessian(Optimizer):
         defaults = dict(lr=lr, betas=betas, eps=eps,
                         weight_decay=weight_decay, hessian_power=hessian_power)
         self.single_gpu = single_gpu
-        super(Adahessian, self).__init__(params, defaults)
+        super().__init__(params, defaults)
 
     def get_trace(self, params, grads):
         """

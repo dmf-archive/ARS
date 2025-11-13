@@ -9,7 +9,7 @@ num_classes = 10
 
 [data]
 batch_size = 128
-num_workers = 4
+num_workers = 0
 aug = true
 cutout = true
 n_holes = 1

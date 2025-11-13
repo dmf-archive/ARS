@@ -16,18 +16,15 @@ n_holes = 1
 cutout_length = 16
 
 [optimizer]
-name = "PI_Muon_AdaFisher"
+name = "KFAC"
 lr = 0.001
-beta = 0.9
-Lambda = 0.001
-gamma = 0.8
-TCov = 10
+momentum = 0.9
+stat_decay = 0.95
+damping = 0.001
+kl_clip = 0.001
 weight_decay = 0.0005
-muon_momentum = 0.95
-
-# PI-related config, will be extracted by get_optimizer
-alpha = 1.0
-ema_beta = 0.9
+TCov = 10
+TInv = 100
 
 [scheduler]
 name = "multistep"
@@ -35,6 +32,6 @@ milestones = [25, 40]
 gamma = 0.1
 
 [train]
-epochs = 2
+epochs = 10
 log_every = 10
 ckpt_every = 50

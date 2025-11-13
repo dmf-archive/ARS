@@ -42,6 +42,7 @@ dev = [
     "torchvision",
     "torchaudio",
     "types-pyyaml>=6.0.12.20250516",
+    "types-toml>=0.10.8.20240310",
 ]
 
 [tool.mypy]

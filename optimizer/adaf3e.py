@@ -35,7 +35,7 @@ class AdaF3E(Optimizer):
                         weight_decay=weight_decay, amsgrad=amsgrad,
                         alpha=alpha, meta_grad_clip_norm=meta_grad_clip_norm)
 
-        super(AdaF3E, self).__init__(params, defaults)
+        super().__init__(params, defaults)
         # Initialize state for the scalar s
         self.state['s_ema'] = 0.0
 
@@ -91,7 +91,7 @@ class AdaF3E(Optimizer):
                     if group['amsgrad']:
                         state['max_exp_avg_sq'] = torch.zeros_like(p, memory_format=torch.preserve_format)
 
-                exp_avg, exp_avg_sq, exp_curvature = state['exp_avg'], state['exp_avg_sq'], state['exp_curvature']
+                exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
 
                 state['step'] += 1
                 beta1, beta2, beta3 = group['betas']

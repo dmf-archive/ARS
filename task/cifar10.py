@@ -108,11 +108,13 @@ class Cifar10Task(BaseTask):
 
     def get_criterion(self) -> nn.Module:
         return nn.CrossEntropyLoss()
+    def get_param_groups(self, model: nn.Module) -> list[dict]:
+        return [{'params': model.parameters()}]
+
 
     def train_step(self, model: nn.Module, batch: Any, criterion: nn.Module,
                    optimizer: torch.optim.Optimizer, device: torch.device,
-                   needs_second_order: bool, accepts_pi_signal: bool,
-                   pi_object: "PIObject | None") -> tuple[torch.Tensor, float, dict[str, float]]:
+                   needs_second_order: bool) -> tuple[torch.Tensor, float, dict[str, float]]:
 
         inputs, targets = batch
         inputs, targets = inputs.to(device), targets.to(device)
@@ -122,10 +124,8 @@ class Cifar10Task(BaseTask):
         loss = criterion(outputs, targets)
         loss.backward(create_graph=needs_second_order)
 
-        if accepts_pi_signal:
-            optimizer.step(pi_object=pi_object)
-        else:
-            optimizer.step()
+        # The decision to pass effective_gamma is now handled by the Trainer
+        optimizer.step()
 
         return outputs.detach(), loss.item(), {}
 

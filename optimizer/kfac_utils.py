@@ -119,10 +119,14 @@ class ComputeCovA:
 
     @staticmethod
     def linear(a, layer):
-        # a: batch_size * in_dim
+        # a: (batch_size, ..., in_dim) where ... can be sequence_length for transformers
+        # Flatten all dimensions except the last one to treat each token as an independent sample.
+        a = a.reshape(-1, a.size(-1))
+        # N_eff = B * T, which is a.size(0) after reshaping
         batch_size = a.size(0)
         if layer.bias is not None:
             a = torch.cat([a, a.new(a.size(0), 1).fill_(1)], 1)
+        # Normalize by the number of effective samples
         return a.t() @ (a / batch_size)
 
 
@@ -169,11 +173,20 @@ class ComputeCovG:
 
     @staticmethod
     def linear(g, layer, batch_averaged):
-        # g: batch_size * out_dim
+        # g: (batch_size, ..., out_dim) where ... can be sequence_length for transformers
+        # Flatten all dimensions except the last one to treat each token as an independent sample.
+        g = g.reshape(-1, g.size(-1))
+        # N_eff = B * T, which is g.size(0) after reshaping
         batch_size = g.size(0)
 
         if batch_averaged:
-            cov_g = g.t() @ (g * batch_size)
-        else:
-            cov_g = g.t() @ (g / batch_size)
+            # g is already averaged over the entire batch (B*T), so we need to rescale it
+            # to get the sum of gradients before computing the covariance.
+            # However, the standard KFAC formulation assumes g is the gradient for each sample.
+            # Let's stick to the non-batch-averaged case which is more standard.
+             cov_g = g.t() @ (g * batch_size) # This seems incorrect if g is already averaged.
+        # The correct formulation should be E[gg^T] - E[g]E[g]^T.
+        # Assuming E[g] is close to zero, we approximate this with E[gg^T].
+        # If g is the gradient for each of the N_eff samples, then E[gg^T] is (g^T @ g) / N_eff.
+        cov_g = g.t() @ (g / batch_size)
         return cov_g

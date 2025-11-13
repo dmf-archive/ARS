@@ -47,7 +47,8 @@ class MetricStore:
         if task_name not in self._epoch_history:
             self._epoch_history[task_name] = []
 
-        latest_global_epoch = self.get_latest_epoch_for_task(task_name).global_epoch if self.get_latest_epoch_for_task(task_name) else -1
+        latest_epoch = self.get_latest_epoch_for_task(task_name)
+        latest_global_epoch = latest_epoch.global_epoch if latest_epoch else -1
         if epoch_metric.global_epoch != latest_global_epoch + 1 and self._epoch_history[task_name]:
              raise ValueError(f"Global epoch mismatch for task '{task_name}'. Expected {latest_global_epoch + 1}, got {epoch_metric.global_epoch}")
 

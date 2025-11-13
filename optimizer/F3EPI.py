@@ -35,7 +35,7 @@ class F3EPI(Optimizer):
                         alpha=alpha, gamma=gamma)
 
         self.single_gpu = single_gpu
-        super(F3EPI, self).__init__(params, defaults)
+        super().__init__(params, defaults)
 
     def step(self, closure=None, pi_object=None):
         if closure is not None:
@@ -68,7 +68,6 @@ class F3EPI(Optimizer):
         # 对元梯度进行范数裁剪
         clip_value = self.param_groups[0]['meta_grad_clip_norm']
         if clip_value > 0:
-            device = params_with_grad[0].device
             # 计算元梯度范数 - 避免使用stack，直接求和
             total_norm = torch.sqrt(sum(torch.norm(g.detach(), 2).pow(2) for g in meta_grads if g is not None))
             clip_coef = clip_value / (total_norm + 1e-6)
