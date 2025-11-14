@@ -39,12 +39,49 @@ def create_optimizer(model, task, config):
     if opt_name in ["AdaFisher", "KFAC", "FOG", "DiagKFAC", "DiagFOG"]:
         opt_factory_config["model"] = model
 
-    if len(param_groups) > 1:
+    if opt_name == "Muon":
+        # Use MuonWithAuxAdam for proper parameter grouping
+        from optimizer.muon import SingleDeviceMuonWithAuxAdam
+        muon_groups = []
+        for group in param_groups:
+            if group.get('use_diag_fog', True):  # hidden weights -> use Muon
+                muon_group = {
+                    'params': group['params'],
+                    'use_muon': True,
+                    'lr': opt_factory_config.get('lr', 0.02),
+                    'momentum': opt_factory_config.get('momentum', 0.95),
+                    'weight_decay': opt_factory_config.get('weight_decay', 0.1)
+                }
+            else:  # non-hidden weights -> use AdamW
+                muon_group = {
+                    'params': group['params'],
+                    'use_muon': False,
+                    'lr': 1e-4,  # AdamW learning rate matching DiagFOG
+                    'betas': (0.9, 0.95),
+                    'eps': 1e-10,
+                    'weight_decay': opt_factory_config.get('weight_decay', 0.1)
+                }
+            muon_groups.append(muon_group)
+        optimizer = SingleDeviceMuonWithAuxAdam(muon_groups)
+        return optimizer, {}, None
+    elif len(param_groups) > 1:
         if opt_name == "DiagFOG":
             adam_lr = opt_factory_config.pop("adam_lr", 1e-4)
             adam_wd = opt_factory_config.pop("adam_weight_decay", 0.01)
             adam_betas = opt_factory_config.pop("adam_betas", (0.9, 0.95))
             for group in param_groups:
+                if not group.get('use_diag_fog', False):
+                    group.setdefault('lr', adam_lr)
+                    group.setdefault('weight_decay', adam_wd)
+                    group.setdefault('betas', adam_betas)
+        elif opt_name in ["DiagKFAC", "FOG"]:
+            # Pop AdamW-specific args from the factory config, as FOG/KFAC don't accept them
+            adam_lr = opt_factory_config.pop("adam_lr", 1e-4)
+            adam_wd = opt_factory_config.pop("adam_weight_decay", 0.01)
+            adam_betas = opt_factory_config.pop("adam_betas", (0.9, 0.95))
+
+            for group in param_groups:
+                # use_diag_fog is the generic flag for "use main optimizer"
                 if not group.get('use_diag_fog', False):
                     group.setdefault('lr', adam_lr)
                     group.setdefault('weight_decay', adam_wd)

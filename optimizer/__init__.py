@@ -6,6 +6,7 @@ from .ada_hessian import Adahessian
 from .adamw_pi import AdamW_PI
 from .diag_fog import DiagFOG
 from .diag_kfac import DiagKFACOptimizer
+from .diag_kfac_muon import DiagKFACMuonOptimizer
 from .fog import FOG
 from .kfac import KFACOptimizer
 from .muon import SingleDeviceMuon
@@ -26,6 +27,7 @@ OPTIMIZER_REGISTRY: dict[str, OptimizerMetadata] = {
     "KFAC": OptimizerMetadata(cls=KFACOptimizer, requires_model=True),
     "FOG": OptimizerMetadata(cls=FOG, requires_model=True),
     "DiagKFAC": OptimizerMetadata(cls=DiagKFACOptimizer, requires_model=True),
+    "DiagKFACMuon": OptimizerMetadata(cls=DiagKFACMuonOptimizer, requires_model=True),
     "DiagFOG": OptimizerMetadata(cls=DiagFOG, requires_model=True, expects_param_groups=True),
     "AdamW_PI": OptimizerMetadata(cls=AdamW_PI),
 }

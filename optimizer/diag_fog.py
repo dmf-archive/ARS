@@ -144,101 +144,78 @@ class DiagFOG(optim.Optimizer):
         return update
 
     def step(self, closure=None):
-        # --- AdamW step for non-DiagFOG parameters ---
-        for group in self.param_groups_adam:
-            for p in group['params']:
-                if p.grad is None:
-                    continue
-                grad = p.grad.data
-                if grad.is_sparse:
-                    raise RuntimeError('AdamW does not support sparse gradients')
+        for group in self.param_groups:
+            if group.get('use_diag_fog', False):
+                # --- DiagFOG step for this group ---
+                lr = group['lr']
+                damping = group.get('damping', 0.001)
+                weight_decay = group.get('weight_decay', 0)
 
-                state = self.state[p]
+                updates = {}
+                diag_fog_modules_in_group = [m for m in self.modules if any(p is p_in_group for p_in_group in group['params'] for p in m.parameters())]
 
-                # State initialization
-                if len(state) == 0:
-                    state['step'] = 0
-                    state['exp_avg'] = torch.zeros_like(p.data)
-                    state['exp_avg_sq'] = torch.zeros_like(p.data)
-
-                exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
-                beta1, beta2 = group['betas']
-                state['step'] += 1
-
-                # Decay the first and second moment running average coefficient
-                exp_avg.mul_(beta1).add_(grad, alpha=1 - beta1)
-                exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
-
-                denom = (exp_avg_sq.sqrt() / math.sqrt(1 - beta2 ** state['step'])).add_(group['eps'])
-                step_size = group['lr'] / (1 - beta1 ** state['step'])
-
-                p.data.addcdiv_(exp_avg, denom, value=-step_size)
-
-        # --- DiagFOG step for designated parameters ---
-        if not self.param_groups_diag_fog:
-            self.steps += 1
-            return
-
-        group = self.param_groups_diag_fog[0]
-        lr = group['lr']
-        damping = group.get('damping', 0.001)
-
-        updates = {}
-
-        # This assumes all modules in a DiagFOG group are processed by DiagFOG
-        diag_fog_modules = [m for m in self.modules if any(p in m.parameters() for p in group['params'])]
-
-        for m in diag_fog_modules:
-            if not any(p.grad is not None for p in m.parameters()):
-                continue
-
-            # Step 1: Statistical_Op - Apply DiagKFAC preconditioning
-            p_grad_mat = self._get_matrix_form_grad(m, m.__class__.__name__)
-            v = self._get_natural_grad(m, p_grad_mat, damping)
-            updates[m] = v
-
-        if updates:
-            # Step 2: Apply KL clipping to the statistically preconditioned gradients
-            self._kl_clip_and_update_grad(updates, lr)
-
-            # Step 3: Structural_Op - Apply Muon orthogonalization to the preconditioned gradients
-            for m in diag_fog_modules:
-                if m not in updates:
-                    continue
-                    
-                # Apply Muon structural update to each parameter
-                for p in m.parameters():
-                    if p.grad is None or p.ndim < 2:
+                for m in diag_fog_modules_in_group:
+                    if not any(p.grad is not None for p in m.parameters()):
                         continue
+                    p_grad_mat = self._get_matrix_form_grad(m, m.__class__.__name__)
+                    v = self._get_natural_grad(m, p_grad_mat, damping)
+                    updates[m] = v
+
+                if updates:
+                    self._kl_clip_and_update_grad(updates, lr)
+                    for m in diag_fog_modules_in_group:
+                        if m not in updates:
+                            continue
+                        for p in m.parameters():
+                            if p.grad is None or p.ndim < 2:
+                                continue
+                            state = self.state[p]
+                            if 'muon_momentum_buffer' not in state:
+                                state['muon_momentum_buffer'] = torch.zeros_like(p.grad)
+                            stat_grad = p.grad.data.clone()
+                            muon_update = self._muon_update(stat_grad, state["muon_momentum_buffer"])
+                            p.grad.data.copy_(muon_update.reshape(p.grad.data.size()))
+
+                # Final update for this DiagFOG group
+                for p in group['params']:
+                    if p.grad is None:
+                        continue
+                    d_p = p.grad.data
+                    if weight_decay != 0:
+                        d_p.add_(p.data, alpha=weight_decay)
+                    p.data.add_(d_p, alpha=-lr)
+
+            else:
+                # --- AdamW step for this group ---
+                for p in group['params']:
+                    if p.grad is None:
+                        continue
+                    grad = p.grad.data
+                    if grad.is_sparse:
+                        raise RuntimeError('AdamW does not support sparse gradients')
+
                     state = self.state[p]
-                    if 'muon_momentum_buffer' not in state:
-                        state['muon_momentum_buffer'] = torch.zeros_like(p.grad)
-                    
-                    # Get the statistically preconditioned gradient
-                    stat_grad = p.grad.data.clone()
-                    
-                    # Apply Muon orthogonalization to the preconditioned gradient
-                    muon_update = self._muon_update(stat_grad, state["muon_momentum_buffer"])
-                    p.grad.data.copy_(muon_update.reshape(p.grad.data.size()))
+                    if len(state) == 0:
+                        state['step'] = 0
+                        state['exp_avg'] = torch.zeros_like(p.data)
+                        state['exp_avg_sq'] = torch.zeros_like(p.data)
 
-        # Standard SGD-like step with momentum
-        for group in self.param_groups_diag_fog:
-            weight_decay = group.get('weight_decay', 0)
-            momentum = group.get('momentum', 0.9)
-            for p in group['params']:
-                if p.grad is None:
-                    continue
-                d_p = p.grad.data
-                if weight_decay != 0:
-                    d_p.add_(p.data, alpha=weight_decay)
-                if momentum != 0:
-                    param_state = self.state[p]
-                    if 'sgd_momentum_buffer' not in param_state:
-                        buf = param_state['sgd_momentum_buffer'] = torch.clone(d_p).detach()
-                    else:
-                        buf = param_state['sgd_momentum_buffer']
-                        buf.mul_(momentum).add_(d_p, alpha=1)
-                    d_p = buf
-                p.data.add_(d_p, alpha=-group['lr'])
+                    exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
+                    beta1, beta2 = group['betas']
+                    state['step'] += 1
 
+                    exp_avg.mul_(beta1).add_(grad, alpha=1 - beta1)
+                    exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
+                    
+                    bias_correction1 = 1 - beta1 ** state['step']
+                    bias_correction2 = 1 - beta2 ** state['step']
+                    
+                    step_size = group['lr'] / bias_correction1
+                    
+                    denom = (exp_avg_sq.sqrt() / math.sqrt(bias_correction2)).add_(group['eps'])
+                    
+                    p.data.addcdiv_(exp_avg, denom, value=-step_size)
+                    if group['weight_decay'] != 0:
+                        p.data.add_(p.data, alpha=-group['weight_decay'] * group['lr'])
+        
         self.steps += 1

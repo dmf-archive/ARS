@@ -113,5 +113,18 @@ class FOG(KFACOptimizer):
                 m.bias.grad.data.mul_(nu)
 
         # 4. Final parameter update using the modified gradients
-        self._step(None)
+        # The _step() from parent KFACOptimizer is a momentum SGD, which is
+        # redundant and harmful after the Muon update. We replace it with a
+        # direct application of the final computed gradient.
+        for group in self.param_groups:
+            lr = group['lr']
+            weight_decay = group.get('weight_decay', 0)
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+                d_p = p.grad.data
+                if weight_decay != 0:
+                    p.data.add_(p.data, alpha=-weight_decay * lr) # AdamW-style decay
+                p.data.add_(d_p, alpha=-lr)
+
         self.steps += 1
