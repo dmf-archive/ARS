@@ -109,7 +109,6 @@ class Cifar10Task(BaseTask):
     def get_criterion(self) -> nn.Module:
         return nn.CrossEntropyLoss()
     def get_param_groups(self, model: nn.Module) -> list[dict]:
-        # Revert to single group for FOG performance debugging
         return [{'params': model.parameters()}]
 
 

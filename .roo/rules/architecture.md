@@ -47,52 +47,90 @@ python -m scripts/train.py --config config/cifar10.toml
 
 ---
 
-## **重构计划 v2.0：高内聚、低耦合的训练管线**
-
-**目标**: 彻底解耦优化器配置、训练逻辑和可观测性，建立一个清晰、可扩展、易于维护的实验框架。
-
-### **第一阶段：优化器注册与配置革命 (WP-OPT)**
-
-此阶段旨在根除硬编码，创建一个灵活、声明式的优化器系统。
-
-1. **任务 1.1: 实现基于注册表的优化器工厂**
-
-   - **问题**: `optimizer/__init__.py` 中冗长的 `if/elif` 链难以维护和扩展。
-   - **方案**:
-     1. 在 `optimizer/__init__.py` 中创建一个名为 `OPTIMIZER_REGISTRY` 的全局字典。
-     2. 为每个优化器创建一个 `dataclass` 或 `dict` 用于存储其元数据，例如：`cls` (类本身), `requires_model: bool`, `supports_param_groups: bool`。
-     3. 使用装饰器模式，在每个优化器文件（如 `optimizer/diag_fog.py`）的顶部直接将其注册到 `OPTIMIZER_REGISTRY` 中。
-     4. 重构 `get_optimizer` 函数，使其通过查阅 `OPTIMIZER_REGISTRY` 来动态实例化优化器并获取其能力标签，彻底消除 `if/elif` 结构。
-   - **涉及文件**: `optimizer/__init__.py` (核心重构), 所有 `optimizer/*.py` 文件。
-
-2. **任务 1.2: 参数分组责任转移**
-   - **问题**: `scripts/train.py` 中存在针对特定模型的参数分组逻辑，造成了不必要的耦合。
-   - **方案**:
-     1. 在 `task/base.py` 中定义一个新的抽象方法 `get_param_groups(self, model) -> list[dict]`。
-     2. 在具体的 `Task` 类（如 `task/wikitext2.py`）中实现此方法，根据传入的 `model` 实例，返回为该模型量身定制的参数分组列表（例如，区分隐藏层、嵌入层等）。
-     3. 重构 `scripts/train.py` 中的 `create_optimizer` 逻辑，使其调用当前 `task` 实例的 `get_param_groups` 方法来获取参数，而不是直接使用 `model.parameters()`。
-   - **涉及文件**: `task/base.py`, `task/wikitext2.py`, `task/cifar10.py`, `scripts/train.py`。
-
-### **第二阶段：训练逻辑与可观测性分离 (WP-OBS)**
-
-此阶段旨在将“如何训练”与“如何观察训练”彻底分离。
-
-1. **任务 2.1: 引入回调式（Callback）可观测系统**
-
-   - **问题**: 日志、检查点等观测逻辑散布在主训练循环中，难以增删或替换。
-   - **方案**:
-     1. 创建一个 `Callback` 基类 (`utils/callbacks/base.py`)，定义 `on_train_begin`, `on_epoch_end`, `on_step_end` 等钩子（hooks）。
-     2. 将 `utils/observers` 目录重命名为 `utils/callbacks`，并重构其中的所有类（`ConsoleLogger`, `MDLogger`, `CheckpointSaver`），使其继承自 `Callback` 基类。
-   - **涉及文件**: `utils/observers/*` -> `utils/callbacks/*` (重构), `utils/callbacks/base.py` (新文件)。
-
-2. **任务 2.2: 抽象 `Trainer` 核心**
-   - **问题**: `scripts/train.py` 文件过于臃肿，承担了所有职责。
-   - **方案**:
-     1. 创建一个新的 `Trainer` 类 (`utils/trainer.py`)。其构造函数接收 `model`, `optimizer`, `criterion`, 数据加载器, 以及一个 `callbacks` 列表。
-     2. 将完整的训练/验证循环逻辑封装到 `Trainer.fit()` 方法中。在循环的各个关键节点（如 epoch 开始、step 结束），`Trainer` 将遍历并调用所有注册回调的相应钩子方法。
-     3. `scripts/train.py` 的职责被极大简化，仅负责组装所有组件（模型、任务、优化器、回调）并将其传递给 `Trainer`，最后调用 `trainer.fit()`。
-   - **涉及文件**: `utils/trainer.py` (新文件), `scripts/train.py` (大幅简化)。
+[以下是重构计划书]
 
 ---
 
-此计划将通过 `Orchestrator` 模式分阶段执行。
+## 持续学习架构演进状态
+
+**版本**: 2.1
+**状态**: **部分实现完成**
+**日期**: 2025-11-16
+
+### 已完成的重构
+
+#### 1. 多任务训练循环
+
+- ✅ [`scripts/train.py`](scripts/train.py:53-57) 已支持多任务配置，通过 `config["experiment"]["tasks"]` 加载多个任务
+- ✅ [`utils/trainer.py`](utils/trainer.py:54-57) 已实现多任务循环，遍历 `task_names` 依次执行每个任务
+- ✅ 任务间共享单一模型和优化器实例，符合持续学习场景需求
+
+#### 2. 持续学习评估任务
+
+- ✅ [`task/mnist_cl.py`](task/mnist_cl.py:1-126) 已实现 MNIST→Fashion 持续学习评估
+- ✅ [`task/fashion_cl.py`](task/fashion_cl.py:1-139) 已实现 Fashion→MNIST 持续学习评估
+- ✅ 两个任务均在 `validate_epoch` 中评估当前任务性能和对先前任务的遗忘程度
+
+#### 3. 参数分组与优化器兼容性
+
+- ✅ 所有任务已实现 `get_param_groups()` 方法，支持 FOG/DiagFOG 的参数分组策略
+- ✅ [`optimizer/__init__.py`](optimizer/__init__.py:56-67) 已注册 `Hadron` 和 `DiagHadron` 优化器
+
+### 待实现的核心特性
+
+#### 1. 课程表 (Curriculum) 配置系统
+
+**状态**: 未实现
+
+当前配置使用扁平化任务列表：
+
+```toml
+[experiment]
+tasks = ["mnist_cl", "fashion_cl"]
+```
+
+目标架构需要课程表配置：
+
+```toml
+[[curriculum]]
+task = "mnist_cl"
+mode = "train"
+epochs = 5
+
+[[curriculum]]
+task = "fashion_cl"
+mode = "train"
+epochs = 5
+```
+
+**实现路径**: 需要修改 [`scripts/train.py`](scripts/train.py:53-57) 和 [`utils/trainer.py`](utils/trainer.py:54-57) 以支持课程表解析和 `mode` 属性处理。
+
+#### 2. 任务切换回调事件
+
+**状态**: 未实现
+
+需要在 [`utils/callbacks/base.py`](utils/callbacks/base.py:1-56) 中添加：
+
+```python
+@abstractmethod
+def on_task_begin(self, task_name: str, task_mode: str, **kwargs):
+    pass
+
+@abstractmethod
+def on_task_end(self, task_name: str, **kwargs):
+    pass
+```
+
+**实现路径**: 修改基类并更新所有回调实现，在 [`utils/trainer.py`](utils/trainer.py:54-57) 的任务切换边界插入事件广播。
+
+#### 3. CLMetricsLogger 回调
+
+**状态**: 未实现
+
+需要创建新的回调类，监听 `on_task_begin` 事件执行零样本评估。
+
+**实现路径**: 在 [`utils/callbacks/`](utils/callbacks/) 目录下新建 `cl_metrics.py`，实现零样本遗忘测量和学习冲击记录。
+
+### 架构设计总结
+
+当前架构已通过**多任务循环**和**评估任务**实现了持续学习的核心能力，但缺乏**课程表配置**的灵活性和**任务切换观测**的精细度。建议根据研究需求优先级，逐步实施待实现特性。

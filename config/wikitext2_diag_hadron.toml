@@ -17,7 +17,7 @@ num_workers = 0
 tokenizer_path = "./data/wikitext2_tokenizer.json"
 
 [optimizer]
-name = "DiagFOG"
+name = "DiagHadron"
 lr = 0.0001
 momentum = 0.9
 stat_decay = 0.95

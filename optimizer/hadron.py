@@ -4,9 +4,9 @@ from .kfac import KFACOptimizer
 from .muon import muon_update
 
 
-class FOG(KFACOptimizer):
+class Hadron(KFACOptimizer):
     """
-    Fisher-Orthogonalized Gradient (FOG) Optimizer.
+    Hadron Optimizer: Full KFAC + Muon operator composition.
 
     This optimizer combines KFAC and Muon in a sequential, operator-composition
     manner rather than a linear combination. It uses KFAC to compute a
@@ -41,7 +41,7 @@ class FOG(KFACOptimizer):
     @torch.no_grad()
     def step(self, closure=None):
         if closure is not None:
-            raise NotImplementedError("Closure not supported for FOG.")
+            raise NotImplementedError("Closure not supported for Hadron.")
 
         group = self.param_groups[0]
         lr = group['lr']
@@ -71,28 +71,28 @@ class FOG(KFACOptimizer):
             g_nat_w, g_nat_b = natural_grads[m][0], natural_grads[m][1] if len(natural_grads[m]) > 1 else None
 
             state_w = self.state[m.weight]
-            fog_update_w = muon_update(
+            hadron_update_w = muon_update(
                 g_nat_w,
                 state_w['muon_momentum_buffer'],
                 beta=self.muon_momentum
             )
 
-            fog_update_b = None
+            hadron_update_b = None
             if g_nat_b is not None and m.bias is not None:
                 state_b = self.state[m.bias]
                 # Bias terms are 1D, muon_update handles them by skipping orthogonalization
-                fog_update_b = muon_update(
+                hadron_update_b = muon_update(
                     g_nat_b,
                     state_b['muon_momentum_buffer'],
                     beta=self.muon_momentum
                 )
 
-            final_updates[m] = [fog_update_w, fog_update_b]
+            final_updates[m] = [hadron_update_w, hadron_update_b]
 
             # For KL clipping, we need the dot product of the final update and the *original* gradient
-            vg_sum += (fog_update_w.reshape(m.weight.grad.data.shape) * m.weight.grad.data * lr ** 2).sum().item()
-            if fog_update_b is not None:
-                vg_sum += (fog_update_b.reshape(m.bias.grad.data.shape) * m.bias.grad.data * lr ** 2).sum().item()
+            vg_sum += (hadron_update_w.reshape(m.weight.grad.data.shape) * m.weight.grad.data * lr ** 2).sum().item()
+            if hadron_update_b is not None:
+                vg_sum += (hadron_update_b.reshape(m.bias.grad.data.shape) * m.bias.grad.data * lr ** 2).sum().item()
 
         # 3. KL clipping and gradient update
         # Add numerical protection for vg_sum
@@ -103,13 +103,13 @@ class FOG(KFACOptimizer):
             if m.weight.grad is None:
                 continue
 
-            fog_update_w, fog_update_b = final_updates[m]
+            hadron_update_w, hadron_update_b = final_updates[m]
 
-            m.weight.grad.data.copy_(fog_update_w.reshape(m.weight.grad.data.shape))
+            m.weight.grad.data.copy_(hadron_update_w.reshape(m.weight.grad.data.shape))
             m.weight.grad.data.mul_(nu)
 
-            if fog_update_b is not None:
-                m.bias.grad.data.copy_(fog_update_b.reshape(m.bias.grad.data.shape))
+            if hadron_update_b is not None:
+                m.bias.grad.data.copy_(hadron_update_b.reshape(m.bias.grad.data.shape))
                 m.bias.grad.data.mul_(nu)
 
         # 4. Final parameter update using the modified gradients

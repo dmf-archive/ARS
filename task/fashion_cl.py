@@ -71,8 +71,8 @@ class FashionClTask(BaseTask):
         hidden_weights = [p for n, p in model.named_parameters() if p.ndim >= 2 and 'embed' not in n]
         others = [p for n, p in model.named_parameters() if p.ndim < 2 or 'embed' in n]
         return [
-            {'params': hidden_weights, 'use_diag_fog': True, 'lr': 0.02, 'weight_decay': 0.01},
-            {'params': others, 'use_diag_fog': False, 'lr': 3e-4, 'betas': (0.9, 0.95), 'weight_decay': 0.01}
+            {'params': hidden_weights, 'use_diag_hadron': True, 'lr': 0.02, 'weight_decay': 0.01},
+            {'params': others, 'use_diag_hadron': False, 'lr': 3e-4, 'betas': (0.9, 0.95), 'weight_decay': 0.01}
         ]
 
     def train_step(self, model: nn.Module, batch: Any, criterion: nn.Module,

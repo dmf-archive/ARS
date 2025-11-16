@@ -10,7 +10,6 @@ class PIObject:
     neg_exp_pi: float
 
 class PICalculator:
-    """A helper class to calculate Predictive Integrity (PI)."""
     def __init__(self, gamma: float, alpha: float, ema_beta: float | None = None, eps: float = 1e-8):
         self.gamma = gamma
         self.alpha = alpha
@@ -20,7 +19,6 @@ class PICalculator:
         self.pi_step = 0
 
     def calculate_pi(self, entropy: torch.Tensor, grad_norm: float) -> tuple[PIObject, PIObject]:
-        """Calculates the instantaneous and optionally smoothed PI."""
         instant_pi_val = torch.exp(-(self.alpha * entropy + self.gamma * grad_norm)).item()
 
         def _create_pi_object(pi_value: float) -> PIObject:
@@ -43,7 +41,6 @@ class PICalculator:
         return instant_pi_obj, instant_pi_obj
 
 def compute_grad_norm(model: torch.nn.Module) -> float:
-    """Computes the total L2 norm of the gradients of a model."""
     total_norm = 0.0
     for p in model.parameters():
         if p.grad is not None:

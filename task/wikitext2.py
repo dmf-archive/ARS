@@ -213,8 +213,8 @@ class Wikitext2Task(BaseTask):
             if not (p.ndim >= 2 and 'transformer.h' in n)
         ]
         param_groups = [
-            {'params': hidden_weights, 'use_diag_fog': True},
-            {'params': non_hidden_weights, 'use_diag_fog': False},
+            {'params': hidden_weights, 'use_diag_hadron': True},
+            {'params': non_hidden_weights, 'use_diag_hadron': False},
         ]
         return param_groups
 

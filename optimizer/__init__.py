@@ -4,11 +4,11 @@ from typing import Callable
 import torch
 
 from .ada_hessian import Adahessian
-from .diag_fog import DiagFOG
+from .diag_hadron import DiagHadron
 from .diag_kfac import DiagKFACOptimizer
 from .diag_kfac_muon import DiagKFACMuonOptimizer
 from .fiena_fog import FIENA_FOG
-from .fog import FOG
+from .hadron import Hadron
 from .kfac import KFACOptimizer
 from .muon import SingleDeviceMuon, SingleDeviceMuonWithAuxAdam
 from .pi_zpd import PI_ZPD
@@ -26,7 +26,7 @@ class OptimizerMetadata:
 def _create_muon_optimizer(params: list[dict], **config) -> tuple[torch.optim.Optimizer, dict, None]:
     muon_groups = []
     for group in params:
-        if group.get('use_diag_fog', True):
+        if group.get('use_diag_hadron', True):
             muon_groups.append({
                 'params': group['params'], 'use_muon': True,
                 'lr': config.get('lr', 0.02), 'momentum': config.get('momentum', 0.95),
@@ -47,7 +47,7 @@ def _configure_aux_adamw_groups(params: list[dict], config: dict):
     adam_wd = config.pop("adam_weight_decay", 0.01)
     adam_betas = config.pop("adam_betas", (0.9, 0.95))
     for group in params:
-        if not group.get('use_diag_fog', False):
+        if not group.get('use_diag_hadron', False):
             group.setdefault('lr', adam_lr)
             group.setdefault('weight_decay', adam_wd)
             group.setdefault('betas', adam_betas)
@@ -58,10 +58,10 @@ OPTIMIZER_REGISTRY: dict[str, OptimizerMetadata | Callable] = {
     "AdaHessian": OptimizerMetadata(cls=Adahessian, requires_second_order=True),
     "Muon": _create_muon_optimizer,
     "KFAC": OptimizerMetadata(cls=KFACOptimizer, requires_model=True, constructor_takes_model=True),
-    "FOG": OptimizerMetadata(cls=FOG, requires_model=True, expects_param_groups=True),
+    "Hadron": OptimizerMetadata(cls=Hadron, requires_model=True, expects_param_groups=True),
     "DiagKFAC": OptimizerMetadata(cls=DiagKFACOptimizer, requires_model=True, expects_param_groups=True),
     "DiagKFACMuon": OptimizerMetadata(cls=DiagKFACMuonOptimizer, requires_model=True, constructor_takes_model=True),
-    "DiagFOG": OptimizerMetadata(cls=DiagFOG, requires_model=True, expects_param_groups=True),
+    "DiagHadron": OptimizerMetadata(cls=DiagHadron, requires_model=True, expects_param_groups=True),
     "PI_ZPD": OptimizerMetadata(cls=PI_ZPD, requires_model=True, expects_param_groups=True),
     "FIENA_FOG": OptimizerMetadata(cls=FIENA_FOG, requires_model=True, requires_second_order=True),
 }
@@ -82,7 +82,7 @@ def get_optimizer(name: str, params: list[dict], **config) -> tuple[torch.optim.
         "accepts_pi_signal": name in ["PI_ZPD", "FIENA_FOG"],
     }
 
-    if name in ["DiagFOG", "DiagKFAC", "FOG"]:
+    if name in ["DiagHadron", "DiagKFAC", "Hadron"]:
         _configure_aux_adamw_groups(params, opt_config)
 
     init_params = params if meta.expects_param_groups else next(iter(params))['params']
