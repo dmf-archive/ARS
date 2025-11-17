@@ -114,7 +114,7 @@ class Cifar10Task(BaseTask):
 
     def train_step(self, model: nn.Module, batch: Any, criterion: nn.Module,
                    optimizer: torch.optim.Optimizer, device: torch.device,
-                   needs_second_order: bool) -> tuple[torch.Tensor, float, dict[str, float]]:
+                   needs_second_order: bool, optimizer_handles_backward: bool) -> tuple[torch.Tensor, torch.Tensor, dict[str, float]]:
 
         inputs, targets = batch
         inputs, targets = inputs.to(device), targets.to(device)
@@ -122,12 +122,11 @@ class Cifar10Task(BaseTask):
         optimizer.zero_grad()
         outputs = model(inputs)
         loss = criterion(outputs, targets)
-        loss.backward(create_graph=needs_second_order)
 
-        # The decision to pass effective_gamma is now handled by the Trainer
-        optimizer.step()
+        if not optimizer_handles_backward:
+            loss.backward(create_graph=needs_second_order, retain_graph=needs_second_order)
 
-        return outputs.detach(), loss.item(), {}
+        return outputs.detach(), loss, {}
 
     def validate_epoch(self, model: nn.Module, test_loader: DataLoader,
                       criterion: nn.Module, device: torch.device) -> dict[str, float]:

@@ -15,7 +15,7 @@ class DiagKFACMuonOptimizer(optim.Optimizer):
     gradients by adapting the orthogonalization strength based on Fisher information
     geometry, avoiding the space mismatch problem of naive operator composition.
     """
-    
+
     def __init__(self,
                  model,
                  lr=0.001,
@@ -30,22 +30,22 @@ class DiagKFACMuonOptimizer(optim.Optimizer):
                  muon_min_steps=3,
                  muon_max_steps=7,
                  batch_averaged=True):
-        
+
         if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr}")
         if momentum < 0.0:
             raise ValueError(f"Invalid momentum value: {momentum}")
         if weight_decay < 0.0:
             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
-            
+
         defaults = dict(lr=lr, momentum=momentum, damping=damping, weight_decay=weight_decay)
         super().__init__(model.parameters(), defaults)
-        
+
         self.known_modules = {'Linear', 'Conv2d'}
         self.modules = []
         self.model = model
         self._prepare_model()
-        
+
         self.steps = 0
         self.m_aa, self.m_gg = {}, {}
         self.stat_decay = stat_decay
@@ -63,9 +63,9 @@ class DiagKFACMuonOptimizer(optim.Optimizer):
             a = a.reshape(-1, a.size(-1))
             if module.bias is not None:
                 a = torch.cat([a, a.new(a.size(0), 1).fill_(1)], 1)
-            
+
             aa_diag = (a * a).sum(dim=0)
-            
+
             if self.steps == 0:
                 self.m_aa[module] = torch.ones_like(aa_diag)
             update_running_stat(aa_diag, self.m_aa[module], self.stat_decay)
@@ -74,9 +74,9 @@ class DiagKFACMuonOptimizer(optim.Optimizer):
         if self.steps % self.TCov == 0:
             g = grad_output[0].data
             g = g.reshape(-1, g.size(-1))
-            
+
             gg_diag = (g * g).sum(dim=0)
-            
+
             if self.steps == 0:
                 self.m_gg[module] = torch.ones_like(gg_diag)
             update_running_stat(gg_diag, self.m_gg[module], self.stat_decay)
@@ -93,17 +93,17 @@ class DiagKFACMuonOptimizer(optim.Optimizer):
         """Compute natural gradient with diagonal Fisher approximation"""
         A_inv_diag = 1.0 / (self.m_aa[m] + damping)
         G_inv_diag = 1.0 / (self.m_gg[m] + damping)
-        
+
         # Natural gradient: F_inv @ grad
         v = p_grad_mat * (G_inv_diag.unsqueeze(1) @ A_inv_diag.unsqueeze(0))
-        
+
         if m.bias is not None:
             v = [v[:, :-1], v[:, -1:]]
             v[0] = v[0].view(m.weight.grad.data.size())
             v[1] = v[1].view(m.bias.grad.data.size())
         else:
             v = [v.view(m.weight.grad.data.size())]
-        
+
         return v
 
     def _adaptive_muon_update(self, nat_grad, fisher_info, momentum_buffer):
@@ -117,40 +117,40 @@ class DiagKFACMuonOptimizer(optim.Optimizer):
         """
         # 1. Compute Fisher strength for adaptive control
         fisher_strength = torch.sqrt(fisher_info.mean() + 1e-8)
-        
+
         # 2. Apply momentum in natural gradient space
         momentum_buffer.lerp_(nat_grad, 1 - self.muon_momentum)
         update = nat_grad.lerp_(momentum_buffer, self.muon_momentum)
-        
+
         # 3. Skip orthogonalization for 1D parameters
         if update.ndim == 1:
             return update
-            
+
         # 4. Adaptive orthogonalization based on Fisher strength
         if update.ndim >= 2:
             # Adaptive steps: more Fisher info -> more orthogonalization
             adaptive_steps = int(
-                self.muon_min_steps + 
-                (self.muon_max_steps - self.muon_min_steps) * 
+                self.muon_min_steps +
+                (self.muon_max_steps - self.muon_min_steps) *
                 min(1.0, fisher_strength)
             )
-            
+
             # Reshape for convolutional layers
             original_shape = update.shape
             if update.ndim == 4:
                 update = update.view(update.size(0), -1)
-            
+
             # Apply Newton-Schulz orthogonalization
             update = zeropower_via_newtonschulz5(update, steps=adaptive_steps)
-            
+
             # Fisher-aware spectral scaling
             spectral_scale = max(1, nat_grad.size(-2) / nat_grad.size(-1))**0.5
             fisher_scale = (fisher_strength / (fisher_strength + 1.0))**0.5
             update *= spectral_scale * fisher_scale
-            
+
             # Restore original shape
             update = update.reshape(original_shape)
-        
+
         return update
 
     def _kl_clip_and_update_grad(self, updates, lr):
@@ -194,15 +194,15 @@ class DiagKFACMuonOptimizer(optim.Optimizer):
         # Step 1: Compute natural gradients
         updates = {}
         fisher_info = {}
-        
+
         for m in self.modules:
             classname = m.__class__.__name__
             p_grad_mat = self._get_matrix_form_grad(m, classname)
-            
+
             # Get natural gradient
             v = self._get_natural_grad(m, p_grad_mat, damping)
             updates[m] = v
-            
+
             # Store Fisher information for adaptive control
             fisher_info[m] = {
                 'A_diag': self.m_aa[m],
@@ -216,32 +216,32 @@ class DiagKFACMuonOptimizer(optim.Optimizer):
         for m in self.modules:
             if m not in updates:
                 continue
-                
+
             # Apply structural regularization to each parameter
             for i, p in enumerate(m.parameters()):
                 if p.grad is None or p.ndim < 2:
                     continue
-                    
+
                 state = self.state[p]
-                
+
                 # Initialize momentum buffer if needed
                 if 'muon_momentum_buffer' not in state:
                     state['muon_momentum_buffer'] = torch.zeros_like(p.grad)
-                
+
                 # Compute composite Fisher strength for this parameter
                 if i == 0:  # weight
                     param_fisher = fisher_info[m]['A_diag'][:p.shape[1]].mean()
                 else:  # bias
                     param_fisher = fisher_info[m]['A_diag'][-1:].mean()
-                
+
                 # Apply adaptive Muon update to the natural gradient
                 nat_grad = p.grad.data.clone()
                 struct_grad = self._adaptive_muon_update(
-                    nat_grad, 
+                    nat_grad,
                     torch.tensor([param_fisher], device=nat_grad.device),
                     state['muon_momentum_buffer']
                 )
-                
+
                 # Update gradient with structurally regularized natural gradient
                 p.grad.data.copy_(struct_grad)
 
@@ -250,13 +250,13 @@ class DiagKFACMuonOptimizer(optim.Optimizer):
             for p in group['params']:
                 if p.grad is None:
                     continue
-                    
+
                 d_p = p.grad.data
-                
+
                 # Weight decay
                 if weight_decay != 0:
                     d_p.add_(p.data, alpha=weight_decay)
-                
+
                 # Momentum
                 if momentum != 0:
                     param_state = self.state[p]
@@ -266,7 +266,7 @@ class DiagKFACMuonOptimizer(optim.Optimizer):
                         buf = param_state['sgd_momentum_buffer']
                         buf.mul_(momentum).add_(d_p, alpha=1)
                     d_p = buf
-                
+
                 # Parameter update
                 p.data.add_(d_p, alpha=-lr)
 

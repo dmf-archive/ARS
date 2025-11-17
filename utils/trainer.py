@@ -71,15 +71,22 @@ class Trainer:
                 num_tokens_in_epoch = 0
 
                 for step, batch in enumerate(current_train_loader):
-                    logits, loss, _ = current_task.train_step(
+                    logits, loss_tensor, _ = current_task.train_step(
                         model=self.model, batch=batch, criterion=self.criterion, optimizer=self.optimizer,
                         device=self.device,
-                        needs_second_order=optimizer_tags.get("requires_second_order", False)
+                        needs_second_order=optimizer_tags.get("requires_second_order", False),
+                        optimizer_handles_backward=optimizer_tags.get("requires_loss_for_step", False)
                     )
+
+                    # Handle optimizers that need loss parameter for step()
+                    if optimizer_tags.get("requires_loss_for_step", False):
+                        self.optimizer.step(loss_tensor)
+                    else:
+                        self.optimizer.step()
 
                     step_metric = StepMetric(
                         task_name=task_name, global_step=global_step, task_epoch=task_epoch,
-                        step_in_epoch=step, loss=loss, learning_rate=self.optimizer.param_groups[0]['lr']
+                        step_in_epoch=step, loss=loss_tensor.item(), learning_rate=self.optimizer.param_groups[0]['lr']
                     )
                     self.store.add_step(step_metric)
                     self._broadcast("on_step_end", step_metric=step_metric, total_steps=len(current_train_loader))
@@ -91,7 +98,7 @@ class Trainer:
                             epoch_entropy_sum += batch_entropy_sum.item()
                             num_tokens_in_epoch += logits.shape[0] * logits.shape[1]
 
-                    epoch_loss_sum += loss
+                    epoch_loss_sum += loss_tensor.item()
                     epoch_grad_norm_list.append(compute_grad_norm(self.model))
                     global_step += 1
 

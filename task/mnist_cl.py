@@ -1,15 +1,18 @@
+import gzip
+import os
+import shutil
+from typing import Any
+
 import torch
 import torch.nn as nn
+import torchvision
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
-from typing import Any, Tuple, Dict
-import torchvision
-import gzip
-import shutil
-import os
+
+from utils.download import resumable_download
 
 from .base import BaseTask
-from utils.download import resumable_download
+
 
 class MnistClTask(BaseTask):
     def __init__(self, config: dict[str, Any]):
@@ -36,7 +39,7 @@ class MnistClTask(BaseTask):
         fashion_test = datasets.FashionMNIST('./data', train=False, download=True, transform=transform)
         return self._build_dataloader(fashion_test, shuffle=False)
 
-    def get_dataloaders(self) -> Tuple[DataLoader, DataLoader]:
+    def get_dataloaders(self) -> tuple[DataLoader, DataLoader]:
         def patched_download_and_extract_archive(url, download_root, filename, md5):
             resumable_download(url, download_root, filename)
             gz_path = os.path.join(download_root, filename)
@@ -48,10 +51,10 @@ class MnistClTask(BaseTask):
         torchvision.datasets.utils.download_and_extract_archive = patched_download_and_extract_archive
 
         transform = self._get_transform()
-        
+
         train_dataset = datasets.MNIST('./data', train=True, download=True, transform=transform)
         test_dataset = datasets.MNIST('./data', train=False, transform=transform)
-        
+
         # The trainer expects a single test_loader, but we will use the one we hold internally for full evaluation
         return self._build_dataloader(train_dataset, shuffle=True), self._build_dataloader(test_dataset, shuffle=False)
 
@@ -61,7 +64,7 @@ class MnistClTask(BaseTask):
 
     def get_criterion(self) -> nn.Module:
         return nn.CrossEntropyLoss()
-        
+
     def get_param_groups(self, model: nn.Module) -> list:
         hidden_weights = [p for n, p in model.named_parameters() if p.ndim >= 2 and 'embed' not in n]
         others = [p for n, p in model.named_parameters() if p.ndim < 2 or 'embed' in n]
@@ -72,21 +75,22 @@ class MnistClTask(BaseTask):
 
     def train_step(self, model: nn.Module, batch: Any, criterion: nn.Module,
                    optimizer: torch.optim.Optimizer, device: torch.device,
-                   needs_second_order: bool) -> Tuple[torch.Tensor, float, Dict[str, float]]:
+                   needs_second_order: bool, optimizer_handles_backward: bool) -> tuple[torch.Tensor, float, dict[str, float]]:
         data, target = batch
         data, target = data.to(device), target.to(device)
 
         optimizer.zero_grad()
         logits = model(data)
         loss = criterion(logits, target)
-        
-        loss.backward(create_graph=needs_second_order)
-        optimizer.step()
 
-        return logits.detach(), loss.item(), {}
+        if not optimizer_handles_backward:
+            loss.backward(create_graph=needs_second_order)
+            optimizer.step()
+
+        return logits.detach(), loss, {}
 
     def validate_epoch(self, model: nn.Module, test_loader: DataLoader,
-                       criterion: nn.Module, device: torch.device) -> Dict[str, float]:
+                       criterion: nn.Module, device: torch.device) -> dict[str, float]:
         model.eval()
         results = {}
 
@@ -101,7 +105,7 @@ class MnistClTask(BaseTask):
                 _, predicted = logits.max(1)
                 mnist_total += target.size(0)
                 mnist_correct += predicted.eq(target).sum().item()
-        
+
         results['mnist_accuracy'] = 100.0 * mnist_correct / mnist_total
         results['mnist_loss'] = mnist_loss / len(test_loader)
 
@@ -116,10 +120,10 @@ class MnistClTask(BaseTask):
                 _, predicted = logits.max(1)
                 fashion_total += target.size(0)
                 fashion_correct += predicted.eq(target).sum().item()
-        
+
         results['fashion_accuracy'] = 100.0 * fashion_correct / fashion_total
         results['fashion_loss'] = fashion_loss / len(self.fashion_test_loader)
-        
+
         # Add placeholder for learning_shock to maintain consistent columns
         results['learning_shock'] = None
 

@@ -34,10 +34,10 @@ class BaseTask(ABC):
     @abstractmethod
     def train_step(self, model: nn.Module, batch: Any, criterion: nn.Module,
                    optimizer: torch.optim.Optimizer, device: torch.device,
-                   needs_second_order: bool) -> tuple[torch.Tensor, float, dict[str, float]]:
+                   needs_second_order: bool, optimizer_handles_backward: bool) -> tuple[torch.Tensor, torch.Tensor, dict[str, float]]:
         """
         Performs a single training step.
-        Returns the model's output logits, the calculated loss, and a dictionary of step-specific metrics.
+        Returns the model's output logits, the loss tensor, and a dictionary of step-specific metrics.
         """
         pass
 

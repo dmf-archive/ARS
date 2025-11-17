@@ -1,15 +1,18 @@
+import gzip
+import os
+import shutil
+from typing import Any
+
 import torch
 import torch.nn as nn
+import torchvision
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
-from typing import Any, Tuple, Dict
-import torchvision
-import gzip
-import shutil
-import os
+
+from utils.download import resumable_download
 
 from .base import BaseTask
-from utils.download import resumable_download
+
 
 class FashionClTask(BaseTask):
     def __init__(self, config: dict[str, Any]):
@@ -17,10 +20,10 @@ class FashionClTask(BaseTask):
         self.batch_size = config["data"]["batch_size"]
         self.num_workers = config["data"]["num_workers"]
         self.num_classes = 10
-        
+
         self.learning_shock = None
         self._is_first_step = True
-        
+
         # We need a handle to the MNIST test set to measure forgetting
         self.mnist_test_loader = self._get_mnist_test_loader()
 
@@ -35,13 +38,13 @@ class FashionClTask(BaseTask):
             dataset, batch_size=self.batch_size, shuffle=shuffle,
             num_workers=self.num_workers, pin_memory=True, drop_last=False
         )
-        
+
     def _get_mnist_test_loader(self) -> DataLoader:
         transform = self._get_transform()
         mnist_test = datasets.MNIST('./data', train=False, download=True, transform=transform)
         return self._build_dataloader(mnist_test, shuffle=False)
 
-    def get_dataloaders(self) -> Tuple[DataLoader, DataLoader]:
+    def get_dataloaders(self) -> tuple[DataLoader, DataLoader]:
         def patched_download_and_extract_archive(url, download_root, filename, md5):
             resumable_download(url, download_root, filename)
             gz_path = os.path.join(download_root, filename)
@@ -53,10 +56,10 @@ class FashionClTask(BaseTask):
         torchvision.datasets.utils.download_and_extract_archive = patched_download_and_extract_archive
 
         transform = self._get_transform()
-        
+
         train_dataset = datasets.FashionMNIST('./data', train=True, download=True, transform=transform)
         test_dataset = datasets.FashionMNIST('./data', train=False, transform=transform)
-        
+
         return self._build_dataloader(train_dataset, shuffle=True), self._build_dataloader(test_dataset, shuffle=False)
 
     def get_model(self) -> nn.Module:
@@ -65,7 +68,7 @@ class FashionClTask(BaseTask):
 
     def get_criterion(self) -> nn.Module:
         return nn.CrossEntropyLoss()
-        
+
     def get_param_groups(self, model: nn.Module) -> list:
         # FOG parameter groups
         hidden_weights = [p for n, p in model.named_parameters() if p.ndim >= 2 and 'embed' not in n]
@@ -77,28 +80,29 @@ class FashionClTask(BaseTask):
 
     def train_step(self, model: nn.Module, batch: Any, criterion: nn.Module,
                    optimizer: torch.optim.Optimizer, device: torch.device,
-                   needs_second_order: bool) -> Tuple[torch.Tensor, float, Dict[str, float]]:
+                   needs_second_order: bool, optimizer_handles_backward: bool) -> tuple[torch.Tensor, float, dict[str, float]]:
         data, target = batch
         data, target = data.to(device), target.to(device)
 
         optimizer.zero_grad()
         logits = model(data)
         loss = criterion(logits, target)
-        
+
         if self._is_first_step:
             self.learning_shock = loss.item()
             self._is_first_step = False
-        
-        loss.backward(create_graph=needs_second_order)
-        optimizer.step()
 
-        return logits.detach(), loss.item(), {}
+        if not optimizer_handles_backward:
+            loss.backward(create_graph=needs_second_order)
+            optimizer.step()
+
+        return logits.detach(), loss, {}
 
     def validate_epoch(self, model: nn.Module, test_loader: DataLoader,
-                       criterion: nn.Module, device: torch.device) -> Dict[str, float]:
+                       criterion: nn.Module, device: torch.device) -> dict[str, float]:
         model.eval()
         results = {}
-        
+
         # 1. Validate on FashionMNIST (its own test set, passed by trainer)
         fashion_loss, fashion_correct, fashion_total = 0.0, 0, 0
         with torch.no_grad():
@@ -110,10 +114,10 @@ class FashionClTask(BaseTask):
                 _, predicted = logits.max(1)
                 fashion_total += target.size(0)
                 fashion_correct += predicted.eq(target).sum().item()
-        
+
         results['fashion_accuracy'] = 100.0 * fashion_correct / fashion_total
         results['fashion_loss'] = fashion_loss / len(test_loader)
-        
+
         # 2. Validate on MNIST to measure forgetting
         mnist_loss, mnist_correct, mnist_total = 0.0, 0, 0
         with torch.no_grad():
@@ -128,7 +132,7 @@ class FashionClTask(BaseTask):
 
         results['mnist_accuracy'] = 100.0 * mnist_correct / mnist_total
         results['mnist_loss'] = mnist_loss / len(self.mnist_test_loader)
-        
+
         # 3. Report learning shock if it was captured
         if self.learning_shock is not None:
             results['learning_shock'] = self.learning_shock

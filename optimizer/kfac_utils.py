@@ -32,9 +32,14 @@ def _extract_patches(x, kernel_size, stride, padding):
 
 def update_running_stat(aa, m_aa, stat_decay):
     # using inplace operation to save memory!
-    m_aa *= stat_decay / (1 - stat_decay)
-    m_aa += aa
-    m_aa *= (1 - stat_decay)
+    if stat_decay == 1.0:
+        # Simple cumulative average
+        m_aa += aa
+    else:
+        # Exponential moving average
+        m_aa *= stat_decay / (1 - stat_decay)
+        m_aa += aa
+        m_aa *= (1 - stat_decay)
 
 
 class ComputeMatGrad:

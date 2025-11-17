@@ -1,0 +1,45 @@
+# Configuration for CIFAR-10 training with DiagF3EHardon (Natural Regularization)
+
+[experiment]
+name = "CIFAR10-DiagF3EHardon-NR"
+tasks = ["cifar10"]
+device = "cuda"
+seed = 42
+
+[data]
+name = "cifar10"
+data_dir = "./data"
+batch_size = 128
+num_workers = 4
+
+[model]
+arch = "resnet18"
+num_classes = 10
+
+[optimizer]
+name = "DiagF3EHardon"
+lr = 0.001
+momentum = 0.9
+# Fast EMA for F_batch
+stat_decay = 0.95
+# Slow EMA for F_life
+life_decay = 0.999
+# Isotropic regularization strength
+lambda_iso = 0.1
+damping = 0.001
+# Covariance update interval
+TCov = 10
+eps = 1e-8
+
+[scheduler]
+name = "CosineAnnealingLR"
+T_max = 24
+eta_min = 0.0
+
+[train]
+epochs = 24
+log_every = 100
+ckpt_every = 1
+
+[logging]
+log_interval = 100

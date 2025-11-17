@@ -34,6 +34,6 @@ adam_weight_decay = 0.1
 adam_betas = [0.9, 0.95]
 
 [train]
-epochs = 60
+epochs = 10
 log_every = 10
 ckpt_every = 2

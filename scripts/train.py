@@ -6,6 +6,7 @@ from typing import Any
 import toml
 import torch
 
+from optimizer import get_optimizer
 from utils.callbacks.checkpoint import CheckpointSaver
 from utils.callbacks.console import ConsoleLogger
 from utils.callbacks.markdown import MDLogger
@@ -59,7 +60,14 @@ def train(config: dict[str, Any], config_name: str):
     model = main_task.get_model().to(device)
     criterion = main_task.get_criterion()
 
-    optimizer, optimizer_tags, pi_config = create_optimizer(model, main_task, config)
+    optimizer_config = config["optimizer"].copy()
+    optimizer_name = optimizer_config.pop("name")
+    optimizer, optimizer_tags, pi_config = get_optimizer(
+        optimizer_name,
+        main_task.get_param_groups(model),
+        model=model,
+        **optimizer_config
+    )
     scheduler = create_scheduler(optimizer, config)
 
     callbacks = [

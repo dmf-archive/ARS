@@ -17,10 +17,19 @@ num_workers = 0
 tokenizer_path = "./data/wikitext2_tokenizer.json"
 
 [optimizer]
-name = "Muon"
+name = "DiagHadron"
 lr = 0.0001
+momentum = 0.9
+stat_decay = 1.0
+damping = 0.001
+kl_clip = 0.001
 weight_decay = 0.1
-momentum = 0.95
+TCov = 10
+TInv = 100
+muon_momentum = 0.95
+adam_lr = 0.0001
+adam_weight_decay = 0.1
+adam_betas = [0.9, 0.95]
 
 [train]
 epochs = 10

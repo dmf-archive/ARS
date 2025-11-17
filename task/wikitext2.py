@@ -94,7 +94,7 @@ def build_line_mode_samples(tokenizer: Tokenizer, lines: list[str], seq_len: int
         current.extend(ids) # 将整个句子放入 current
     # 末尾不足 (seq_len-1) 的补零（使用 ignore_index），因为移位后有效长度是 seq_len-1
     if current:
-        pad_len = (seq_len - 1) - len(current)
+        pad_len = seq_len - len(current)
         current.extend([ignore_index] * pad_len)
         samples.append(torch.tensor(current, dtype=torch.long))
     return samples
@@ -116,6 +116,8 @@ class LineModeWikitext2Dataset(Dataset):
         # 自回归移位：source 取[:-1]，target 取[1:]
         source = seq[:-1]
         target = seq[1:]
+        # **关键修复**：将 source 中的 ignore_index（-100）替换为 pad_id（0），以避免嵌入层索引越界
+        source = torch.where(source == -100, torch.tensor(0, dtype=source.dtype), source)
         # mask 只覆盖有效位置，长度同步减 1
         mask = torch.ones_like(source, dtype=torch.float)
         return {"source": source, "target": target, "mask": mask}
@@ -164,7 +166,7 @@ class Wikitext2Task(BaseTask):
 
             # 统一做 EOF 拼接，使用 ignore_index=-100 作为填充标签
             pad_id = 0  # 假设 0 是 pad_id
-            samples = build_line_mode_samples(self.tokenizer, all_sentences, self.sequence_length, eos_id, pad_id=pad_id, ignore_index=-100)
+            samples = build_line_mode_samples(self.tokenizer, all_sentences, self.sequence_length + 1, eos_id, pad_id=pad_id, ignore_index=-100)
             print(f"Saving {len(samples)} line-mode samples to cache: {cache_file}")
             torch.save(samples, cache_file)
 
@@ -229,7 +231,7 @@ class Wikitext2Task(BaseTask):
 
     def train_step(self, model: nn.Module, batch: Any, criterion: nn.Module,
                    optimizer: torch.optim.Optimizer, device: torch.device,
-                   needs_second_order: bool) -> tuple[torch.Tensor, float, dict[str, float]]:
+                   needs_second_order: bool, optimizer_handles_backward: bool) -> tuple[torch.Tensor, float, dict[str, float]]:
         batch = {k: v.to(device) for k, v in batch.items()}
         optimizer.zero_grad()
         with self._maybe_efficient_attention(needs_second_order):
@@ -239,16 +241,17 @@ class Wikitext2Task(BaseTask):
             log_probas_flat = log_probas.view(-1, vocab_size)
             target_flat = batch["target"].view(-1)
             loss = criterion(log_probas_flat, target_flat)
-            
+
             # Step-level 断言：如果损失为0或NaN，直接报错退出
             if torch.isnan(loss) or torch.isinf(loss):
                 raise RuntimeError(f"NaN/Inf loss detected: {loss.item()}")
             if loss.item() == 0.0:
                 raise RuntimeError(f"Zero loss detected: {loss.item()}")
-                
-        loss.backward(create_graph=needs_second_order)
-        optimizer.step()
-        return log_probas.detach(), loss.item(), {}
+
+        if not optimizer_handles_backward:
+            loss.backward(create_graph=needs_second_order)
+            optimizer.step()
+        return log_probas.detach(), loss, {}
 
     def validate_epoch(self, model: nn.Module, valid_loader: DataLoader,
                        criterion: nn.Module, device: torch.device) -> dict[str, float]:
@@ -264,13 +267,13 @@ class Wikitext2Task(BaseTask):
                 log_probas_flat = log_probas.view(-1, vocab_size)
                 target_flat = batch["target"].view(-1)
                 loss = criterion(log_probas_flat, target_flat)
-                
+
                 # Step-level 断言：如果损失为0或NaN，直接报错退出
                 if torch.isnan(loss) or torch.isinf(loss):
                     raise RuntimeError(f"NaN/Inf loss detected in validation: {loss.item()}")
                 if loss.item() == 0.0:
                     raise RuntimeError(f"Zero loss detected in validation: {loss.item()}")
-                    
+
                 # 只统计非 -100 的 token 数，与 NLLLoss 内部口径一致
                 valid_mask = (target_flat != -100)
                 total_loss += loss.item() * valid_mask.sum().item()

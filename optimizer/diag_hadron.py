@@ -9,7 +9,7 @@ from .kfac_utils import update_running_stat
 from .muon import zeropower_via_newtonschulz5
 
 
-class DiagFOG(optim.Optimizer):
+class DiagHadron(optim.Optimizer):
     """
     DiagFOG: A lightweight hybrid of DiagKFAC and Muon.
 
@@ -19,17 +19,17 @@ class DiagFOG(optim.Optimizer):
     diagonal methods and the robustness of structural gradients.
     """
 
-    def __init__(self, param_groups, model=None, lr=1e-3, stat_decay=0.95, TCov=10, TInv=100, muon_momentum=0.95, **kwargs):
+    def __init__(self, param_groups, model=None, lr=1e-3, stat_decay=0.95, TCov=10, TInv=100, muon_momentum=0.95, kl_clip=0.001, **kwargs):
         # Default AdamW values
         defaults = dict(lr=lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0)
         super().__init__(param_groups, defaults)
 
-        self.param_groups_diag_fog = []
+        self.param_groups_diag_hadron = []
         self.param_groups_adam = []
 
         for group in self.param_groups:
-            if group.get('use_diag_fog', False):
-                self.param_groups_diag_fog.append(group)
+            if group.get('use_diag_hadron', False):
+                self.param_groups_diag_hadron.append(group)
             else:
                 self.param_groups_adam.append(group)
 
@@ -38,10 +38,11 @@ class DiagFOG(optim.Optimizer):
         self.TCov = TCov
         self.TInv = TInv
         self.muon_momentum = muon_momentum
+        self.kl_clip = kl_clip
 
         self.known_modules = {'Linear', 'Conv2d'}
         self.modules = []
-        
+
         # Only prepare model if it's provided
         if self.model is not None:
             self._prepare_model()
@@ -110,7 +111,7 @@ class DiagFOG(optim.Optimizer):
 
     def _kl_clip_and_update_grad(self, updates, lr):
         vg_sum = 0
-        for m in self.modules:
+        for m in updates.keys():
             v = updates[m]
             vg_sum += (v[0] * m.weight.grad.data * lr ** 2).sum().item()
             if m.bias is not None:
@@ -118,7 +119,7 @@ class DiagFOG(optim.Optimizer):
 
         nu = min(1.0, math.sqrt(self.kl_clip / (vg_sum + 1e-8)))
 
-        for m in self.modules:
+        for m in updates.keys():
             v = updates[m]
             m.weight.grad.data.copy_(v[0])
             m.weight.grad.data.mul_(nu)
@@ -145,16 +146,16 @@ class DiagFOG(optim.Optimizer):
 
     def step(self, closure=None):
         for group in self.param_groups:
-            if group.get('use_diag_fog', False):
-                # --- DiagFOG step for this group ---
+            if group.get('use_diag_hadron', False):
+                # --- DiagHadron step for this group ---
                 lr = group['lr']
                 damping = group.get('damping', 0.001)
                 weight_decay = group.get('weight_decay', 0)
 
                 updates = {}
-                diag_fog_modules_in_group = [m for m in self.modules if any(p is p_in_group for p_in_group in group['params'] for p in m.parameters())]
+                diag_hadron_modules_in_group = [m for m in self.modules if any(p is p_in_group for p_in_group in group['params'] for p in m.parameters())]
 
-                for m in diag_fog_modules_in_group:
+                for m in diag_hadron_modules_in_group:
                     if not any(p.grad is not None for p in m.parameters()):
                         continue
                     p_grad_mat = self._get_matrix_form_grad(m, m.__class__.__name__)
@@ -163,7 +164,7 @@ class DiagFOG(optim.Optimizer):
 
                 if updates:
                     self._kl_clip_and_update_grad(updates, lr)
-                    for m in diag_fog_modules_in_group:
+                    for m in diag_hadron_modules_in_group:
                         if m not in updates:
                             continue
                         for p in m.parameters():
@@ -176,7 +177,7 @@ class DiagFOG(optim.Optimizer):
                             muon_update = self._muon_update(stat_grad, state["muon_momentum_buffer"])
                             p.grad.data.copy_(muon_update.reshape(p.grad.data.size()))
 
-                # Final update for this DiagFOG group
+                # Final update for this DiagHadron group
                 for p in group['params']:
                     if p.grad is None:
                         continue
@@ -206,16 +207,16 @@ class DiagFOG(optim.Optimizer):
 
                     exp_avg.mul_(beta1).add_(grad, alpha=1 - beta1)
                     exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
-                    
+
                     bias_correction1 = 1 - beta1 ** state['step']
                     bias_correction2 = 1 - beta2 ** state['step']
-                    
+
                     step_size = group['lr'] / bias_correction1
-                    
+
                     denom = (exp_avg_sq.sqrt() / math.sqrt(bias_correction2)).add_(group['eps'])
-                    
+
                     p.data.addcdiv_(exp_avg, denom, value=-step_size)
                     if group['weight_decay'] != 0:
                         p.data.add_(p.data, alpha=-group['weight_decay'] * group['lr'])
-        
+
         self.steps += 1
