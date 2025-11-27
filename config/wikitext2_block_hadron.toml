@@ -17,7 +17,7 @@ num_workers = 0
 tokenizer_path = "./data/wikitext2_tokenizer.json"
 
 [optimizer]
-name = "DiagHadron"
+name = "BlockHadron"
 lr = 0.0001
 momentum = 0.9
 stat_decay = 0.95
@@ -27,6 +27,7 @@ weight_decay = 0.1
 TCov = 10
 TInv = 100
 muon_momentum = 0.95
+block_size = 64
 
 # AdamW parameters for non-hidden layers
 adam_lr = 0.001

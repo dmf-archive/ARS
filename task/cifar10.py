@@ -109,7 +109,28 @@ class Cifar10Task(BaseTask):
     def get_criterion(self) -> nn.Module:
         return nn.CrossEntropyLoss()
     def get_param_groups(self, model: nn.Module) -> list[dict]:
-        return [{'params': model.parameters()}]
+        # For Muon compatibility, we need to separate hidden weights from others
+        # This is a simplified version for ResNet-like architectures
+        hidden_weights = []
+        non_hidden_weights = []
+        
+        for name, param in model.named_parameters():
+            if param.ndim >= 2 and any(layer in name for layer in ['conv', 'linear', 'fc']):
+                # These are likely hidden layer weights that can benefit from Muon
+                hidden_weights.append(param)
+            else:
+                # Biases, batch norm params, etc. - use regular optimization
+                non_hidden_weights.append(param)
+        
+        if hidden_weights and non_hidden_weights:
+            # Return separated groups for Muon optimization
+            return [
+                {'params': hidden_weights, 'use_muon': True},
+                {'params': non_hidden_weights, 'use_muon': False}
+            ]
+        else:
+            # Fallback: all parameters in one group (will use AdamW)
+            return [{'params': model.parameters(), 'use_muon': False}]
 
 
     def train_step(self, model: nn.Module, batch: Any, criterion: nn.Module,
