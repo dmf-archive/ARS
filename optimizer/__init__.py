@@ -22,12 +22,9 @@ OPTIMIZER_REGISTRY: dict[str, OptimizerMetadata] = {
     "Muon": OptimizerMetadata(cls_name="SingleDeviceMuonWithAuxAdam", module_name="muon", expects_param_groups=True),
     "KFAC": OptimizerMetadata(cls_name="KFACOptimizer", module_name="kfac", requires_model=True, constructor_takes_model=True),
     "Hadron": OptimizerMetadata(cls_name="Hadron", module_name="hadron", requires_model=True, constructor_takes_model=True),
-    "HadronOEWC": OptimizerMetadata(cls_name="HadronOEWC", module_name="hadron_oewc", requires_model=True, constructor_takes_model=True),
     "DiagKFAC": OptimizerMetadata(cls_name="DiagKFACOptimizer", module_name="diag_kfac", requires_model=True, expects_param_groups=True),
     "DiagKFACMuon": OptimizerMetadata(cls_name="DiagKFACMuonOptimizer", module_name="diag_kfac_muon", requires_model=True, constructor_takes_model=True),
     "DiagHadron": OptimizerMetadata(cls_name="DiagHadron", module_name="diag_hadron", requires_model=True, expects_param_groups=True),
-    "BlockHadron": OptimizerMetadata(cls_name="BlockHadron", module_name="block_hadron", requires_model=True, expects_param_groups=True),
-    "DiagHadronOEWC": OptimizerMetadata(cls_name="DiagHadronOEWC", module_name="diag_hadron_oewc", requires_model=True, expects_param_groups=True),
     "RMSuon": OptimizerMetadata(cls_name="RMSuon", module_name="rmsuon", expects_param_groups=True),
     "LazyRMSuon": OptimizerMetadata(cls_name="LazyRMSuon", module_name="lazy_rmsuon", expects_param_groups=True),
 }
