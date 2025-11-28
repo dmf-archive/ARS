@@ -4,7 +4,6 @@ import torch
 import torch.optim as optim
 
 from .kfac_utils import update_running_stat
-
 from .muon import zeropower_via_newtonschulz5
 
 

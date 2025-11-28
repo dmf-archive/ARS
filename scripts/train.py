@@ -123,7 +123,7 @@ def main():
 
     config = load_config(config_path)
     config_name = config_path.stem
-    
+
     if args.profile:
         config["experiment"]["profile"] = True
 

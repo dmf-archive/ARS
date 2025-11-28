@@ -1,4 +1,5 @@
 import math
+
 import torch
 import torch.optim as optim
 
@@ -45,7 +46,7 @@ class BlockHadron(optim.Optimizer):
 
         self.known_modules = {'Linear'}
         self.modules = []
-        
+
         if self.model is not None:
             self._prepare_model()
 
@@ -66,31 +67,31 @@ class BlockHadron(optim.Optimizer):
             a = input[0].data.reshape(-1, module.in_features)
             if module.bias is not None:
                 a = torch.cat([a, a.new(a.size(0), 1).fill_(1)], 1)
-            
+
             for i in range(0, a.shape[1], self.block_size):
                 block = a[:, i:i+self.block_size]
                 cov_block = block.t() @ (block / block.size(0))
-                
+
                 if self.steps == 0:
                     if module not in self.m_aa:
                         self.m_aa[module] = {}
                     self.m_aa[module][i] = torch.ones_like(cov_block)
-                
+
                 update_running_stat(cov_block, self.m_aa[module][i], self.stat_decay)
 
     def _save_grad_output(self, module, grad_input, grad_output):
         if self.steps % self.TCov == 0:
             g = grad_output[0].data.reshape(-1, module.out_features)
-            
+
             for i in range(0, g.shape[1], self.block_size):
                 block = g[:, i:i+self.block_size]
                 cov_block = block.t() @ (block / block.size(0))
-                
+
                 if self.steps == 0:
                     if module not in self.m_gg:
                         self.m_gg[module] = {}
                     self.m_gg[module][i] = torch.ones_like(cov_block)
-                
+
                 update_running_stat(cov_block, self.m_gg[module][i], self.stat_decay)
 
     def _update_inv(self, module):
@@ -106,13 +107,13 @@ class BlockHadron(optim.Optimizer):
 
     def _get_natural_grad(self, m, p_grad_mat):
         v = torch.zeros_like(p_grad_mat)
-        
+
         for i_g, G_inv_block in self.G_inv[m].items():
             for i_a, A_inv_block in self.A_inv[m].items():
                 grad_block = p_grad_mat[i_g:i_g+self.block_size, i_a:i_a+self.block_size]
                 v_block = G_inv_block @ grad_block @ A_inv_block
                 v[i_g:i_g+self.block_size, i_a:i_a+self.block_size] = v_block
-        
+
         if m.bias is not None:
             v_w = v[:, :-1].view(m.weight.grad.data.size())
             v_b = v[:, -1:].view(m.bias.grad.data.size())
@@ -132,19 +133,19 @@ class BlockHadron(optim.Optimizer):
                     state['step'] = 0
                     state['exp_avg'] = torch.zeros_like(p.data)
                     state['exp_avg_sq'] = torch.zeros_like(p.data)
-                
+
                 exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
                 beta1, beta2 = group['betas']
                 state['step'] += 1
-                
+
                 exp_avg.mul_(beta1).add_(grad, alpha=1 - beta1)
                 exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
-                
+
                 bias_correction1 = 1 - beta1 ** state['step']
                 bias_correction2 = 1 - beta2 ** state['step']
                 step_size = group['lr'] / bias_correction1
                 denom = (exp_avg_sq.sqrt() / math.sqrt(bias_correction2)).add_(group['eps'])
-                
+
                 p.data.addcdiv_(exp_avg, denom, value=-step_size)
                 if group['weight_decay'] != 0:
                     p.data.add_(p.data, alpha=-group['weight_decay'] * group['lr'])
@@ -152,7 +153,7 @@ class BlockHadron(optim.Optimizer):
         for group in self.param_groups_block_hadron:
             lr = group['lr']
             weight_decay = group['weight_decay']
-            
+
             natural_grads = {}
             block_hadron_modules = [m for m in self.modules if any(p is p_in_group for p_in_group in group['params'] for p in m.parameters())]
 
@@ -172,13 +173,13 @@ class BlockHadron(optim.Optimizer):
             vg_sum = 0
             for m, g_nat_list in natural_grads.items():
                 g_nat_w, g_nat_b = g_nat_list[0], g_nat_list[1] if len(g_nat_list) > 1 else None
-                
+
                 state_w = self.state[m.weight]
                 if 'muon_momentum_buffer' not in state_w:
                     state_w['muon_momentum_buffer'] = torch.zeros_like(m.weight)
-                
+
                 hadron_update_w, _ = muon_update(g_nat_w, state_w['muon_momentum_buffer'], beta=self.muon_momentum, srm_gamma=self.srm_gamma)
-                
+
                 hadron_update_b = None
                 if g_nat_b is not None:
                     state_b = self.state[m.bias]
@@ -190,7 +191,7 @@ class BlockHadron(optim.Optimizer):
                 vg_sum += (hadron_update_w * m.weight.grad.data * lr**2).sum().item()
                 if hadron_update_b is not None:
                     vg_sum += (hadron_update_b * m.bias.grad.data * lr**2).sum().item()
-            
+
             nu = min(1.0, math.sqrt(self.kl_clip / (vg_sum + 1e-8)))
 
             for m, updates in final_updates.items():

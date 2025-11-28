@@ -1,7 +1,9 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from importlib import import_module
+
 import torch
+
 
 @dataclass
 class OptimizerMetadata:
@@ -79,7 +81,7 @@ def _create_specialized_param_groups(
             special_config['ns_steps'] = config.get("ns_steps", 5)
             if optimizer_name == "LazyRMSuon":
                 special_config['energy_sync_every'] = config.get("energy_sync_every", 10)
-        
+
         param_groups.append(special_config)
 
     if adamw_params:
@@ -92,7 +94,7 @@ def _create_specialized_param_groups(
             'weight_decay': config.get("adam_weight_decay", 0.01),
         }
         param_groups.append(adam_config)
-    
+
     return param_groups
 
 
@@ -109,7 +111,7 @@ def get_optimizer(name: str, params: list[dict], **config) -> tuple[torch.optim.
         "requires_loss_for_step": meta.requires_loss_for_step,
         "accepts_pi_signal": name in ["PI_ZPD", "FIENA_FOG"],
     }
-    
+
     # If optimizer expects param groups, we might need to auto-create them
     if meta.expects_param_groups and name in ["Muon", "RMSuon", "LazyRMSuon"]:
         # Flatten the initial param list
@@ -130,7 +132,7 @@ def get_optimizer(name: str, params: list[dict], **config) -> tuple[torch.optim.
     else:
         if not meta.requires_model:
             opt_config.pop('model', None)
-        
+
         # Clean up config for optimizers that get structured groups
         if meta.expects_param_groups and name in ["Muon", "RMSuon", "LazyRMSuon"]:
              optimizer = OptimizerClass(init_params)

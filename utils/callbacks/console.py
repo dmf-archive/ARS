@@ -33,9 +33,10 @@ class ConsoleLogger(Callback):
 
     def on_train_begin(self, store: "MetricStore", **kwargs):
         output_dir = kwargs.get("output_dir", "N/A")
+        model_name = self.config['model'].get('type', self.config['model'].get('arch', 'unknown'))
         self.console.print(Panel.fit(
             f"[bold cyan]Tasks:[/bold cyan] {', '.join(self.config['experiment']['tasks'])}\n"
-            f"[bold cyan]Model:[/bold cyan] {self.config['model']['arch']}\n"
+            f"[bold cyan]Model:[/bold cyan] {model_name}\n"
             f"[bold cyan]Optimizer:[/bold cyan] {self.config['optimizer']['name']}\n"
             f"[bold cyan]Epochs:[/bold cyan] {self.config['train']['epochs']}\n"
             f"[bold cyan]Device:[/bold cyan] {self.config['experiment']['device']}\n"

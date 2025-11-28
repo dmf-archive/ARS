@@ -49,12 +49,12 @@ def concatenate_and_chunk(texts: list[str], tokenizer: Tokenizer, block_size: in
         if text and text.strip():
             tokens = tokenizer.encode(text).ids
             all_tokens.extend(tokens)
-    
+
     samples = []
     for i in range(0, len(all_tokens) - block_size + 1, block_size):
         chunk = all_tokens[i:i + block_size]
         samples.append(torch.tensor(chunk, dtype=torch.long))
-    
+
     return samples
 
 
@@ -116,16 +116,31 @@ class Wikitext2Task(BaseTask):
         return train_loader, valid_loader
 
     def get_model(self) -> nn.Module:
-        from model.nano_gpt import MiniGPT1
-        model = MiniGPT1(
-            vocabulary_size=self.tokenizer.get_vocab_size(),
-            embedding_size=self.config["model"]["embedding_size"],
-            sequence_length=self.sequence_length,
-            num_heads=self.config["model"]["num_heads"],
-            num_layers=self.config["model"]["num_layers"],
-            learn_embeddings=True,
-        )
-        return model
+        model_type = self.config["model"].get("type", "nano_gpt")
+        if model_type == "rope":
+            from model.qwen3_rope import Qwen3RoPEWrapper
+            return Qwen3RoPEWrapper(
+                vocabulary_size=self.tokenizer.get_vocab_size(),
+                hidden_size=self.config["model"]["embedding_size"],
+                num_hidden_layers=self.config["model"]["num_layers"],
+                num_attention_heads=self.config["model"]["num_heads"],
+                num_key_value_heads=self.config["model"]["num_heads"],
+                max_position_embeddings=self.sequence_length,
+                rope_theta=self.config["model"]["rope_theta"],
+                intermediate_size=self.config["model"]["intermediate_size"],
+                tie_word_embeddings=self.config["model"]["tie_word_embeddings"],
+            )
+        else:
+            from model.nano_gpt import MiniGPT1
+            model = MiniGPT1(
+                vocabulary_size=self.tokenizer.get_vocab_size(),
+                embedding_size=self.config["model"]["embedding_size"],
+                sequence_length=self.sequence_length,
+                num_heads=self.config["model"]["num_heads"],
+                num_layers=self.config["model"]["num_layers"],
+                learn_embeddings=True,
+            )
+            return model
 
     def get_criterion(self) -> nn.Module:
         return nn.CrossEntropyLoss()
@@ -133,11 +148,11 @@ class Wikitext2Task(BaseTask):
     def get_param_groups(self, model: nn.Module) -> list[dict]:
         hidden_weights = [
             p for n, p in model.named_parameters()
-            if p.ndim >= 2 and 'transformer.h' in n
+            if p.ndim >= 2 and ('transformer.h' in n or 'model.layers' in n)
         ]
         non_hidden_weights = [
             p for n, p in model.named_parameters()
-            if not (p.ndim >= 2 and 'transformer.h' in n)
+            if not (p.ndim >= 2 and ('transformer.h' in n or 'model.layers' in n))
         ]
         param_groups = [
             {'params': hidden_weights, 'use_diag_hadron': True, 'use_muon': True},
@@ -151,7 +166,7 @@ class Wikitext2Task(BaseTask):
             with sdpa_kernel(backends=[SDPBackend.MATH]):
                 yield
         else:
-            with sdpa_kernel(backends=[SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION]):
+            with sdpa_kernel(backends=[SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]):
                 yield
 
     def train_step(self, model: nn.Module, batch: Any, criterion: nn.Module,
@@ -160,11 +175,17 @@ class Wikitext2Task(BaseTask):
         batch = {k: v.to(device) for k, v in batch.items()}
         optimizer.zero_grad()
         with self._maybe_efficient_attention(needs_second_order):
-            log_probas = model(batch["source"])
-            batch_size, seq_len_minus_1, vocab_size = log_probas.shape
-            log_probas_flat = log_probas.view(-1, vocab_size)
-            target_flat = batch["target"].view(-1)
-            loss = criterion(log_probas_flat, target_flat)
+            if hasattr(model, 'loss'):
+                logits = model(batch["source"])
+                loss = model.loss(logits, batch["target"], batch["mask"])
+                output = logits
+            else:
+                log_probas = model(batch["source"])
+                batch_size, seq_len_minus_1, vocab_size = log_probas.shape
+                log_probas_flat = log_probas.view(-1, vocab_size)
+                target_flat = batch["target"].view(-1)
+                loss = criterion(log_probas_flat, target_flat)
+                output = log_probas
 
             if torch.isnan(loss) or torch.isinf(loss):
                 raise RuntimeError(f"NaN/Inf loss detected: {loss.item()}")
@@ -174,31 +195,38 @@ class Wikitext2Task(BaseTask):
         if not optimizer_handles_backward:
             loss.backward(create_graph=needs_second_order)
             optimizer.step()
-        return log_probas.detach(), loss, {}
+        return output.detach(), loss, {}
 
     def validate_epoch(self, model: nn.Module, valid_loader: DataLoader,
                        criterion: nn.Module, device: torch.device) -> dict[str, float]:
         model.eval()
         total_loss = 0.0
         total_tokens = 0
-        
+
         with torch.no_grad():
             for batch in valid_loader:
                 batch = {k: v.to(device) for k, v in batch.items()}
-                log_probas = model(batch["source"])
-                batch_size, seq_len_minus_1, vocab_size = log_probas.shape
-                log_probas_flat = log_probas.view(-1, vocab_size)
-                target_flat = batch["target"].view(-1)
-                loss = criterion(log_probas_flat, target_flat)
+
+                if hasattr(model, 'loss'):
+                    logits = model(batch["source"])
+                    loss = model.loss(logits, batch["target"], batch["mask"])
+                    current_loss = loss.item()
+                else:
+                    log_probas = model(batch["source"])
+                    batch_size, seq_len_minus_1, vocab_size = log_probas.shape
+                    log_probas_flat = log_probas.view(-1, vocab_size)
+                    target_flat = batch["target"].view(-1)
+                    loss = criterion(log_probas_flat, target_flat)
+                    current_loss = loss.item()
 
                 if torch.isnan(loss) or torch.isinf(loss):
                     raise RuntimeError(f"NaN/Inf loss detected in validation: {loss.item()}")
                 if loss.item() == 0.0:
                     raise RuntimeError(f"Zero loss detected in validation: {loss.item()}")
 
-                total_loss += loss.item() * target_flat.numel()
-                total_tokens += target_flat.numel()
-        
+                total_loss += current_loss * batch["target"].numel()
+                total_tokens += batch["target"].numel()
+
         avg_loss = total_loss / total_tokens if total_tokens > 0 else 0
         perplexity = math.exp(avg_loss) if avg_loss > 0 else float('inf')
         return {"loss": avg_loss, "perplexity": perplexity}

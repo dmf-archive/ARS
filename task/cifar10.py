@@ -97,13 +97,13 @@ class Cifar10Task(BaseTask):
     def get_param_groups(self, model: nn.Module) -> list[dict]:
         hidden_weights = []
         non_hidden_weights = []
-        
+
         for name, param in model.named_parameters():
             if param.ndim >= 2 and any(layer in name for layer in ['conv', 'linear', 'fc']):
                 hidden_weights.append(param)
             else:
                 non_hidden_weights.append(param)
-        
+
         if hidden_weights and non_hidden_weights:
             return [
                 {'params': hidden_weights, 'use_muon': True},

@@ -1,5 +1,5 @@
+
 import torch
-from typing import Optional, List, Tuple
 
 
 @torch.jit.script
@@ -42,19 +42,19 @@ def _calculate_energy_and_momentum(
     beta1: float,
     beta2: float,
     eps: float
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     bias_correction1 = 1 - beta1 ** step
     bias_correction2 = 1 - beta2 ** step
-    
+
     m_hat = exp_avg / bias_correction1
     v_hat = exp_avg_sq / bias_correction2
-    
+
     denom = v_hat.sqrt().add_(eps)
-    
+
     # This is memory-intensive, but we need the norm
     adam_update = m_hat.div(denom)
     energy = adam_update.norm()
-    
+
     return m_hat, energy
 
 
@@ -73,17 +73,17 @@ def adamw_step_kernel(
 ):
     exp_avg.mul_(beta1).add_(grad, alpha=1 - beta1)
     exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
-    
+
     bias_correction1 = 1 - beta1 ** step
     bias_correction2 = 1 - beta2 ** step
-    
+
     denom = (exp_avg_sq.sqrt() / (bias_correction2 ** 0.5)).add_(eps)
-    
+
     step_size = lr / bias_correction1
-    
+
     if weight_decay != 0:
         param.mul_(1 - lr * weight_decay)
-        
+
     param.addcdiv_(exp_avg, denom, value=-step_size)
 
 class RMSuon(torch.optim.Optimizer):
@@ -102,7 +102,7 @@ class RMSuon(torch.optim.Optimizer):
         super().__init__(params, defaults)
 
     @torch.no_grad()
-    def step(self, closure: Optional[callable] = None) -> Optional[float]:
+    def step(self, closure=None):
         loss = None
         if closure is not None:
             with torch.enable_grad():
@@ -147,11 +147,11 @@ class RMSuon(torch.optim.Optimizer):
 
             # Step 2: Calculate energy and bias-corrected momentum (heavier)
             m_hat, energy = _calculate_energy_and_momentum(exp_avg, exp_avg_sq, step, beta1, beta2, eps)
-            
+
             # Step 3: Orthogonalize
             original_shape = m_hat.shape
             m_hat_flat = m_hat.view(m_hat.size(0), -1) if p.ndim == 4 else m_hat
-            
+
             # Note: The performance bottleneck might be the CPU->GPU transfer if m_hat is not on the correct device
             # or the data type conversion inside zeropower. Let's assume m_hat is on the correct device.
             O = zeropower_via_newtonschulz5(m_hat_flat, steps=ns_steps)
@@ -162,7 +162,7 @@ class RMSuon(torch.optim.Optimizer):
             # Step 4: Apply update
             base_energy = O.norm().add_(1e-10)
             scale = energy / base_energy
-            
+
             p.mul_(1 - lr * weight_decay)
             p.add_(O, alpha=-lr * scale)
 

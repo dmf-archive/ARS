@@ -35,7 +35,7 @@ def muon_update(grad, momentum, beta=0.95, ns_steps=5, nesterov=True, srm_gamma=
     # 1. Standard Momentum Update
     momentum.lerp_(grad, 1 - beta)
     update = grad.lerp_(momentum, beta) if nesterov else momentum
-    
+
     # Store raw update for SRM calculation
     update_raw = update.clone() if update.ndim >= 2 else None
 
@@ -49,18 +49,18 @@ def muon_update(grad, momentum, beta=0.95, ns_steps=5, nesterov=True, srm_gamma=
 
     # 2. Orthogonalization (Spectral Flattening)
     update = zeropower_via_newtonschulz5(update, steps=ns_steps)
-    
+
     # 3. SRM: Spectral Residual Calculation & Dynamic Damping
     spectral_residual = 0.0
     if update_raw is not None:
         # Calculate normalized spectral residual: rho = || U_raw_aligned - U_ortho || / || U_ortho ||
         norm_raw = update_raw.norm() + 1e-6
         norm_ortho = update.norm() + 1e-6
-        
+
         # Align scales for pure shape comparison
         update_raw_aligned = update_raw * (norm_ortho / norm_raw)
         spectral_residual = (update_raw_aligned - update).norm().item() / norm_ortho.item()
-        
+
         # Apply SRM Damping if gamma > 0
         # beta_eff = beta * (1 - tanh(gamma * rho))
         # Note: We are modifying the *next* step's momentum, or the *current* update?
@@ -75,7 +75,7 @@ def muon_update(grad, momentum, beta=0.95, ns_steps=5, nesterov=True, srm_gamma=
 
     # 4. Final Scaling
     update *= max(1, grad.size(-2) / grad.size(-1))**0.5
-    
+
     return update, spectral_residual
 
 

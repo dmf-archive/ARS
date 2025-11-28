@@ -66,7 +66,7 @@ class Hadron(KFACOptimizer):
                 beta=self.muon_momentum,
                 srm_gamma=self.srm_gamma
             )
-            
+
             if not hasattr(self, 'diagnostics'):
                 self.diagnostics = {}
             self.diagnostics[f"{m.__class__.__name__}_weight_rho"] = rho_w

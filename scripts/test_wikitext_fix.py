@@ -1,10 +1,8 @@
 import sys
-import math
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import torch
 from task.wikitext2 import Wikitext2Task
 
 config = {
@@ -44,9 +42,9 @@ print(f"✓ Valid batch shape: {valid_batch['source'].shape}")
 
 sample = train_loader.dataset.samples[0]
 print(f"\n✓ Sample length: {len(sample)}")
-print(f"✓ All tokens are valid (no padding in Concatenate-and-Chunk)")
+print("✓ All tokens are valid (no padding in Concatenate-and-Chunk)")
 
-print(f"\n✓ Expected sample count increase: ~14x (from ~2.5k to ~36k)")
+print("\n✓ Expected sample count increase: ~14x (from ~2.5k to ~36k)")
 print(f"✓ Actual train samples: {len(train_loader.dataset)}")
 print(f"✓ Actual valid samples: {len(valid_loader.dataset)}")
 

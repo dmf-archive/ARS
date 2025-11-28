@@ -1,5 +1,5 @@
+
 import torch
-from typing import Optional, List, Tuple
 
 
 @torch.jit.script
@@ -33,22 +33,22 @@ def rmsuon_statistics_kernel(
     beta2: float,
     step: int,
     eps: float
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     # Update statistics
     exp_avg.mul_(beta1).add_(grad, alpha=1 - beta1)
     exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
-    
+
     bias_correction1 = 1 - beta1 ** step
     bias_correction2 = 1 - beta2 ** step
-    
+
     m_hat = exp_avg / bias_correction1
-    
+
     # Calculate energy (AdamW update norm)
     # This is the expensive part we want to skip in lazy mode
     denom = exp_avg_sq.div(bias_correction2).sqrt_().add_(eps)
     adam_update = m_hat.div(denom)
     energy = adam_update.norm()
-    
+
     return m_hat, energy
 
 
@@ -64,10 +64,10 @@ def rmsuon_statistics_kernel_lazy(
     # Only update statistics, do not compute energy
     exp_avg.mul_(beta1).add_(grad, alpha=1 - beta1)
     exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
-    
+
     bias_correction1 = 1 - beta1 ** step
     m_hat = exp_avg / bias_correction1
-    
+
     return m_hat
 
 
@@ -86,17 +86,17 @@ def adamw_step_kernel(
 ):
     exp_avg.mul_(beta1).add_(grad, alpha=1 - beta1)
     exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
-    
+
     bias_correction1 = 1 - beta1 ** step
     bias_correction2 = 1 - beta2 ** step
-    
+
     denom = (exp_avg_sq.sqrt() / (bias_correction2 ** 0.5)).add_(eps)
-    
+
     step_size = lr / bias_correction1
-    
+
     if weight_decay != 0:
         param.mul_(1 - lr * weight_decay)
-        
+
     param.addcdiv_(exp_avg, denom, value=-step_size)
 
 
@@ -110,20 +110,20 @@ class LazyRMSuon(torch.optim.Optimizer):
         weight_decay: float = 0.01,
         ns_steps: int = 5,
         energy_sync_every: int = 10,  # New parameter for lazy sync
-        aux_lr: Optional[float] = None,
-        aux_betas: Optional[tuple] = None,
-        aux_eps: Optional[float] = None,
-        aux_weight_decay: Optional[float] = None,
+        aux_lr: float | None = None,
+        aux_betas: tuple | None = None,
+        aux_eps: float | None = None,
+        aux_weight_decay: float | None = None,
     ):
-        if not 0.0 <= lr:
+        if not lr >= 0.0:
             raise ValueError(f"Invalid learning rate: {lr}")
-        if not 0.0 <= eps:
+        if not eps >= 0.0:
             raise ValueError(f"Invalid epsilon value: {eps}")
         if not 0.0 <= betas[0] < 1.0:
             raise ValueError(f"Invalid beta1 parameter: {betas[0]}")
         if not 0.0 <= betas[1] < 1.0:
             raise ValueError(f"Invalid beta2 parameter: {betas[1]}")
-        if not 0.0 <= weight_decay:
+        if not weight_decay >= 0.0:
             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
 
         aux_lr = aux_lr if aux_lr is not None else lr
@@ -173,7 +173,7 @@ class LazyRMSuon(torch.optim.Optimizer):
         super().__init__(param_groups, defaults)
 
     @torch.no_grad()
-    def step(self, closure: Optional[callable] = None) -> Optional[float]:
+    def step(self, closure: callable | None = None) -> float | None:
         loss = None
         if closure is not None:
             with torch.enable_grad():
@@ -184,7 +184,7 @@ class LazyRMSuon(torch.optim.Optimizer):
             lr = group['lr']
             eps = group['eps']
             weight_decay = group['weight_decay']
-            
+
             is_rmsuon_group = group.get('is_rmsuon_group', False)
             ns_steps = group.get('ns_steps', 5)
             energy_sync_every = group.get('energy_sync_every', 10)
@@ -235,12 +235,12 @@ class LazyRMSuon(torch.optim.Optimizer):
 
                     base_energy = O.norm().add_(1e-10)
                     scale = energy / base_energy
-                    
+
                     if weight_decay != 0:
                         p.mul_(1 - lr * weight_decay)
-                    
+
                     p.add_(O, alpha=-lr * scale)
-                    
+
                 else:
                     adamw_step_kernel(
                         p, grad, exp_avg, exp_avg_sq,
