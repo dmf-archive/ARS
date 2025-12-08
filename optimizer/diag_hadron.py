@@ -91,7 +91,7 @@ class DiagHadron(optim.Optimizer):
 
     def _kl_clip_and_update_grad(self, updates, lr):
         vg_sum = 0
-        for m in updates.keys():
+        for m in updates:
             v = updates[m]
             vg_sum += (v[0] * m.weight.grad.data * lr ** 2).sum().item()
             if m.bias is not None:
@@ -99,7 +99,7 @@ class DiagHadron(optim.Optimizer):
 
         nu = min(1.0, math.sqrt(self.kl_clip / (vg_sum + 1e-8)))
 
-        for m in updates.keys():
+        for m in updates:
             v = updates[m]
             m.weight.grad.data.copy_(v[0])
             m.weight.grad.data.mul_(nu)

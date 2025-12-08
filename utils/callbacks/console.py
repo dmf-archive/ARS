@@ -66,8 +66,11 @@ class ConsoleLogger(Callback):
             self.progress.remove_task(self.step_task_id)
             self.step_task_id = None
 
-        last_metric = context.store.get_latest_epoch_for_task(context.current_task_name)
-        if not last_metric:
+        if context.current_task_name:
+            last_metric = context.store.get_latest_epoch_for_task(context.current_task_name)
+            if not last_metric:
+                return
+        else:
             return
 
         table = Table(title=f"Epoch {last_metric.global_epoch + 1} Results")

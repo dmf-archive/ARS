@@ -1,15 +1,12 @@
-import math
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+
 import torch
-import torch.nn as nn
 from datasets import load_dataset
 from tokenizers import Tokenizer
-from torch.nn.attention import SDPBackend, sdpa_kernel
 from torch.utils.data import DataLoader, Dataset
-from .wikitext2 import Wikitext2Dataset, Wikitext2Task, get_or_train_tokenizer
+
+from .wikitext2 import Wikitext2Dataset, Wikitext2Task
+
 
 def pack_sequences_greedy(texts: list[str], tokenizer: Tokenizer, max_length: int) -> list[list[int]]:
     all_sentences = []
@@ -28,7 +25,7 @@ def pack_sequences_greedy(texts: list[str], tokenizer: Tokenizer, max_length: in
     all_sentences.sort(key=len, reverse=True)
 
     packs = []
-    current_pack = []
+    current_pack: list[int] = []
     for tokens in all_sentences:
         if len(current_pack) + len(tokens) <= max_length:
             current_pack.extend(tokens)
@@ -38,7 +35,7 @@ def pack_sequences_greedy(texts: list[str], tokenizer: Tokenizer, max_length: in
             current_pack = list(tokens)
     if current_pack:
         packs.append(current_pack)
-    
+
     return packs
 
 class Wikitext2LineTask(Wikitext2Task):
@@ -52,9 +49,9 @@ class Wikitext2LineTask(Wikitext2Task):
         else:
             raw_dataset = load_dataset("wikitext", "wikitext-2-raw-v1", split=split)
             all_texts = [item['text'] for item in raw_dataset if item['text'] and not item['text'].isspace()]
-            
+
             packed_sequences = pack_sequences_greedy(all_texts, self.tokenizer, self.sequence_length + 1)
-            
+
             pad_token_id = self.tokenizer.token_to_id("<pad>")
             if pad_token_id is None:
                 pad_token_id = 0
@@ -63,7 +60,7 @@ class Wikitext2LineTask(Wikitext2Task):
             for seq in packed_sequences:
                 if len(seq) > self.sequence_length + 1:
                     seq = seq[:self.sequence_length + 1]
-                
+
                 padding_needed = (self.sequence_length + 1) - len(seq)
                 padded_seq = seq + [pad_token_id] * padding_needed
                 samples_list.append(torch.tensor(padded_seq, dtype=torch.long))
@@ -72,7 +69,7 @@ class Wikitext2LineTask(Wikitext2Task):
                 samples = torch.stack(samples_list)
             else:
                 samples = torch.empty(0, self.sequence_length + 1, dtype=torch.long)
-            
+
             torch.save(samples, cache_file)
 
         return Wikitext2Dataset(samples)

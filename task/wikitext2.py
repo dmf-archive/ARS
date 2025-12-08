@@ -171,28 +171,17 @@ class Wikitext2Task(BaseTask):
                 yield
 
     def train_step(self, model: nn.Module, batch: Any, criterion: nn.Module,
-                   optimizer: torch.optim.Optimizer, device: torch.device,
-                   needs_second_order: bool, optimizer_handles_backward: bool) -> tuple[torch.Tensor, float, dict[str, float]]:
+                   device: torch.device, needs_second_order: bool) -> tuple[torch.Tensor, torch.Tensor, dict[str, float]]:
         batch = {k: v.to(device) for k, v in batch.items()}
-        optimizer.zero_grad()
+
         with self._maybe_efficient_attention(needs_second_order):
-            if hasattr(model, 'loss'):
-                logits = model(batch["source"])
-                loss = model.loss(logits, batch["target"], batch["mask"])
-                output = logits
-            else:
-                log_probas = model(batch["source"])
-                loss = criterion(log_probas.transpose(1, 2), batch["target"])
-                output = log_probas
+            logits = model(batch["source"])
+            loss = criterion(logits.transpose(1, 2), batch["target"])
+            output = logits
 
             if torch.isnan(loss) or torch.isinf(loss):
                 raise RuntimeError(f"NaN/Inf loss detected: {loss.item()}")
-            if loss.item() == 0.0:
-                raise RuntimeError(f"Zero loss detected: {loss.item()}")
 
-        if not optimizer_handles_backward:
-            loss.backward(create_graph=needs_second_order)
-            optimizer.step()
         return output.detach(), loss, {}
 
     def validate_epoch(self, model: nn.Module, valid_loader: DataLoader,
@@ -205,19 +194,12 @@ class Wikitext2Task(BaseTask):
             for batch in valid_loader:
                 batch = {k: v.to(device) for k, v in batch.items()}
 
-                if hasattr(model, 'loss'):
-                    logits = model(batch["source"])
-                    loss = model.loss(logits, batch["target"], batch["mask"])
-                    current_loss = loss.item()
-                else:
-                    log_probas = model(batch["source"])
-                    loss = criterion(log_probas.transpose(1, 2), batch["target"])
-                    current_loss = loss.item()
+                logits = model(batch["source"])
+                loss = criterion(logits.transpose(1, 2), batch["target"])
+                current_loss = loss.item()
 
-                if torch.isnan(loss) or torch.isinf(loss):
-                    raise RuntimeError(f"NaN/Inf loss detected in validation: {loss.item()}")
-                if loss.item() == 0.0:
-                    raise RuntimeError(f"Zero loss detected in validation: {loss.item()}")
+                if torch.isnan(torch.tensor(current_loss)) or torch.isinf(torch.tensor(current_loss)):
+                    raise RuntimeError(f"NaN/Inf loss detected in validation: {current_loss}")
 
                 total_loss += current_loss * batch["target"].numel()
                 total_tokens += batch["target"].numel()

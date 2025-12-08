@@ -27,9 +27,14 @@ class BaseTask(ABC):
         pass
 
     @abstractmethod
-    def train_step(self, model: nn.Module, batch: Any, criterion: nn.Module,
-                   optimizer: torch.optim.Optimizer, device: torch.device,
-                   needs_second_order: bool, optimizer_handles_backward: bool) -> tuple[torch.Tensor, torch.Tensor, dict[str, float]]:
+    def train_step(
+        self,
+        model: nn.Module,
+        batch: Any,
+        criterion: nn.Module,
+        device: torch.device,
+        needs_second_order: bool,
+    ) -> tuple[torch.Tensor, torch.Tensor, dict[str, float]]:
         pass
 
     @abstractmethod

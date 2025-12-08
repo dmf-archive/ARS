@@ -44,9 +44,8 @@ class MnistClTask(BaseTask):
             gz_path = os.path.join(download_root, filename)
             raw_path = os.path.join(download_root, filename.replace('.gz', ''))
             if not os.path.exists(raw_path):
-                with gzip.open(gz_path, 'rb') as f_in:
-                    with open(raw_path, 'wb') as f_out:
-                        shutil.copyfileobj(f_in, f_out)
+                with gzip.open(gz_path, 'rb') as f_in, open(raw_path, 'wb') as f_out:
+                    shutil.copyfileobj(f_in, f_out)
         torchvision.datasets.utils.download_and_extract_archive = patched_download_and_extract_archive
 
         transform = self._get_transform()
@@ -73,7 +72,7 @@ class MnistClTask(BaseTask):
 
     def train_step(self, model: nn.Module, batch: Any, criterion: nn.Module,
                    optimizer: torch.optim.Optimizer, device: torch.device,
-                   needs_second_order: bool, optimizer_handles_backward: bool) -> tuple[torch.Tensor, float, dict[str, float]]:
+                   needs_second_order: bool, optimizer_handles_backward: bool) -> tuple[torch.Tensor, torch.Tensor, dict[str, float]]:
         data, target = batch
         data, target = data.to(device), target.to(device)
 
@@ -120,6 +119,6 @@ class MnistClTask(BaseTask):
         results['fashion_accuracy'] = 100.0 * fashion_correct / fashion_total
         results['fashion_loss'] = fashion_loss / len(self.fashion_test_loader)
 
-        results['learning_shock'] = None
+        results['learning_shock'] = 0.0
 
         return results

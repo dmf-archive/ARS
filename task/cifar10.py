@@ -114,18 +114,12 @@ class Cifar10Task(BaseTask):
 
 
     def train_step(self, model: nn.Module, batch: Any, criterion: nn.Module,
-                   optimizer: torch.optim.Optimizer, device: torch.device,
-                   needs_second_order: bool, optimizer_handles_backward: bool) -> tuple[torch.Tensor, torch.Tensor, dict[str, float]]:
-
+                   device: torch.device, needs_second_order: bool) -> tuple[torch.Tensor, torch.Tensor, dict[str, float]]:
         inputs, targets = batch
         inputs, targets = inputs.to(device), targets.to(device)
 
-        optimizer.zero_grad()
         outputs = model(inputs)
         loss = criterion(outputs, targets)
-
-        if not optimizer_handles_backward:
-            loss.backward(create_graph=needs_second_order, retain_graph=needs_second_order)
 
         return outputs.detach(), loss, {}
 

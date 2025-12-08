@@ -12,7 +12,7 @@ superseded_by: ""
 
 ## 状态 (Status)
 
-**Accepted**
+Proposed | **Accepted** | Rejected | Superseded | Deprecated
 
 ## 背景 (Context)
 
@@ -31,7 +31,7 @@ superseded_by: ""
 
 这一决策基于以下实验证据和理论分析：
 
-1. **性能优势**: 在 Wikitext-2 Line Mode 任务中，基于 Adam 二阶矩的 `Ada-RMSuon` (PPL 87.61) 显著优于基于 KFAC 的 `KFAC-RMSuon` (PPL 100.36)。
+1. **性能优势**: 在 Wikitext-2 Line Mode 任务中，基于 Adam 二阶矩的 `Ada-RMSuon` 取得了 **83.88** 的最佳 PPL，显著优于基于 KFAC 的 `KFAC-RMSuon` (最佳 PPL **88.90**)。
 2. **FEP 一致性**: 在自由能原理框架下，梯度的模长直接量化了参数分布需要漂移的“距离”以最小化自由能（意外）。Adam 的二阶矩 vₜ 忠实地记录了这种“漂移需求”的历史统计量。
 3. **结构化假设失效**: KFAC 的核心假设 F ≈ A ⊗ G 在 Transformer 等复杂非线性架构中往往失效，引入了结构化偏差，导致 `energy` 估计失准。
 
@@ -39,13 +39,13 @@ superseded_by: ""
 
 ### 积极 (Positive)
 
-- **POS-001**: **收敛速度提升**: `Ada-RMSuon` 展现出极快的初始收敛速度，在 4 个 epoch 内即达到最佳 PPL。
+- **POS-001**: **收敛速度与性能优势**: `Ada-RMSuon` 展现出极快的初始收敛速度，在 4 个 epoch 内即达到最佳 PPL (83.88)，显著优于所有基线。
 - **POS-002**: **计算效率**: 相比于需要复杂 hooks 和矩阵分解的 KFAC，基于 Adam 的实现计算成本更低，更易于扩展到大规模模型。
 - **POS-003**: **理论自洽性**: 确立了梯度作为“唯一真理”的地位，避免了因错误的结构化假设而引入的偏差，符合 SOO-OFE 的设计哲学。
 
 ### 消极 (Negative)
 
-- **NEG-001**: **过拟合风险**: 虽然收敛极快，但实验观察到在训练后期（Epoch 5+）出现过拟合反弹。这意味着当前的几何约束（Muon 正交化）虽然强力，但可能缺乏动态适应性。
+- **NEG-001**: **过拟合风险**: 虽然收敛极快，但实验观察到在达到最佳性能后（Epoch 4, PPL 83.88），PPL 在 Epoch 5 反弹至 87.61，证实了过拟合的存在。这意味着当前的几何约束（Muon 正交化）虽然强力，但可能缺乏动态适应性。
 - **NEG-002**: **正则化耦合**: 现有的 `weight_decay` 策略与谱更新机制存在复杂的相互作用，可能需要针对性的调整。
 
 ## 考虑的备选方案 (Alternatives Considered)
@@ -53,12 +53,12 @@ superseded_by: ""
 ### Ada-Muon (纯几何约束)
 
 - **ALT-001**: **描述 (Description)**: 仅应用 Muon 的谱正交化，不进行基于 `energy` 的步长缩放。
-- **ALT-002**: **拒绝理由 (Rejection Reason)**: 实验表明，其收敛速度和Muon并无显著优势，且后期依然出现过拟合趋势。
+- **ALT-002**: **拒绝理由 (Rejection Reason)**: 实验表明，标准 `Muon` 的最佳 PPL 为 161.09，远劣于 `Ada-RMSuon` (83.88)，证明了能量注入的必要性。
 
 ### KFAC-RMSuon (结构化能量源)
 
 - **ALT-003**: **描述 (Description)**: 使用 KFAC 的对角近似 (F_diag ≈ diag(A) ⊗ diag(G)) 来计算 `energy`。
-- **ALT-004**: **拒绝理由 (Rejection Reason)**: 实验性能显著劣于 `Ada-RMSuon`。理论分析指出，Transformer 的非线性复杂性破坏了 KFAC 的 Kronecker 积假设，导致能量估计偏差。
+- **ALT-004**: **拒绝理由 (Rejection Reason)**: 实验性能 (最佳 PPL 88.90) 劣于 `Ada-RMSuon` (最佳 PPL 83.88)。理论分析指出，Transformer 的非线性复杂性可能破坏了 KFAC 的 Kronecker 积假设，导致能量估计出现偏差。
 
 ## 实施注意事项 (Implementation Notes)
 

@@ -1,6 +1,8 @@
 import math
-import torch
 from pathlib import Path
+
+import torch
+
 
 def calculate_adaptive_wd(
     dataset_size: int, batch_size: int, epsilon: float = 1e-3
@@ -28,7 +30,7 @@ if __name__ == "__main__":
     try:
         # Path to the preprocessed training data tensor
         data_path = Path("./data/cache/wikitext2_train_line_pack_ids_v3.pt")
-        
+
         wikitext2_train_size = get_dataset_size_from_tensor(data_path)
         batch_size = 8
 

@@ -1,4 +1,3 @@
-from collections.abc import Callable
 from dataclasses import dataclass
 from importlib import import_module
 
@@ -14,6 +13,7 @@ class OptimizerMetadata:
     expects_param_groups: bool = False
     constructor_takes_model: bool = False
     requires_loss_for_step: bool = False
+    handles_backward_pass: bool = False
     is_sam: bool = False
 
 OPTIMIZER_REGISTRY: dict[str, OptimizerMetadata] = {
@@ -27,10 +27,10 @@ OPTIMIZER_REGISTRY: dict[str, OptimizerMetadata] = {
     "DiagHadron": OptimizerMetadata(cls_name="DiagHadron", module_name="diag_hadron", requires_model=True, expects_param_groups=True),
     "RMSuon": OptimizerMetadata(cls_name="RMSuon", module_name="rmsuon", expects_param_groups=True),
     "AdaSuon": OptimizerMetadata(cls_name="AdaSuon", module_name="adasuon", expects_param_groups=True),
-    "LazyRMSuon": OptimizerMetadata(cls_name="LazyRMSuon", module_name="lazy_rmsuon", expects_param_groups=True),
     "AdaRMSuon": OptimizerMetadata(cls_name="AdaRMSuon", module_name="ada_rmsuon", expects_param_groups=True),
+    "DeltaLossEMA": OptimizerMetadata(cls_name="DeltaLossEMA", module_name="delta_loss_ema", expects_param_groups=True, requires_loss_for_step=True, handles_backward_pass=False),
     "AdaMuon": OptimizerMetadata(cls_name="AdaMuon", module_name="ada_muon", expects_param_groups=True),
-    "KFACRMSuon": OptimizerMetadata(cls_name="KFACRMSuon", module_name="kfac_rmsuon", expects_param_groups=True, requires_model=True),
+    "KFACRMSuon": OptimizerMetadata(cls_name="KFACRMSuon", module_name="kfac_rmsuon", expects_param_groups=True, requires_model=True, constructor_takes_model=True),
 }
 
 def _import_optimizer(module_name: str, class_name: str) -> type[torch.optim.Optimizer]:
@@ -52,11 +52,11 @@ def _create_specialized_param_groups(
     adamw_params = []
 
     # Define the condition for a parameter to be handled by the special optimizer
-    if optimizer_name in ["Muon", "RMSuon", "AdaSuon", "LazyRMSuon", "AdaRMSuon", "AdaMuon", "KFACRMSuon"]:
+    if optimizer_name in ["Muon", "RMSuon", "AdaSuon", "LazyRMSuon", "AdaRMSuon", "IG_AdaRMSuon", "AdaMuon", "KFACRMSuon"]:
         is_special_param = lambda p: p.ndim >= 2 and max(p.shape) < 10000
         if optimizer_name == "KFACRMSuon":
             special_group_flag = 'use_kfac_rmsuon'
-        elif 'RMSuon' in optimizer_name or 'AdaSuon' in optimizer_name or 'AdaMuon' in optimizer_name:
+        elif 'RMSuon' in optimizer_name or 'AdaSuon' in optimizer_name or 'AdaMuon' in optimizer_name or 'IG_AdaRMSuon' in optimizer_name:
             special_group_flag = 'is_rmsuon_group'
         else:
             special_group_flag = 'use_muon'
@@ -81,7 +81,7 @@ def _create_specialized_param_groups(
         }
         if optimizer_name == "Muon":
             special_config['momentum'] = config.get("momentum", 0.95)
-        elif "RMSuon" in optimizer_name or "AdaSuon" in optimizer_name or "AdaRMSuon" in optimizer_name or "AdaMuon" in optimizer_name:
+        elif "RMSuon" in optimizer_name or "AdaSuon" in optimizer_name or "AdaRMSuon" in optimizer_name or "IG_AdaRMSuon" in optimizer_name or "AdaMuon" in optimizer_name:
             special_config['betas'] = config.get("betas", (0.9, 0.999))
             special_config['eps'] = config.get("eps", 1e-8)
         elif optimizer_name == "KFACRMSuon":
@@ -120,11 +120,12 @@ def get_optimizer(name: str, params: list[dict], **config) -> tuple[torch.optim.
     tags = {
         "requires_second_order": meta.requires_second_order,
         "requires_loss_for_step": meta.requires_loss_for_step,
+        "handles_backward_pass": meta.handles_backward_pass,
         "accepts_pi_signal": name in ["PI_ZPD", "FIENA_FOG"],
     }
 
     # If optimizer expects param groups, we might need to auto-create them
-    if meta.expects_param_groups and name in ["Muon", "RMSuon", "AdaSuon", "LazyRMSuon", "AdaRMSuon", "AdaMuon", "KFACRMSuon"]:
+    if meta.expects_param_groups and name in ["Muon", "RMSuon", "AdaSuon", "LazyRMSuon", "AdaRMSuon", "IG_AdaRMSuon", "AdaMuon", "KFACRMSuon"]:
         # Flatten the initial param list
         all_params = [p for group in params for p in group['params']]
         init_params = _create_specialized_param_groups(all_params, name, opt_config)
@@ -145,13 +146,12 @@ def get_optimizer(name: str, params: list[dict], **config) -> tuple[torch.optim.
             opt_config.pop('model', None)
 
         # Clean up config for optimizers that get structured groups
-        if meta.expects_param_groups and name in ["Muon", "RMSuon", "AdaSuon", "LazyRMSuon", "AdaRMSuon", "AdaMuon", "KFACRMSuon"]:
-             if name == "KFACRMSuon":
-                 optimizer = OptimizerClass(init_params, model=opt_config.pop('model'), **opt_config)
-             else:
-                 optimizer = OptimizerClass(init_params)
+        if meta.expects_param_groups and name in ["Muon", "RMSuon", "AdaSuon", "LazyRMSuon", "AdaRMSuon", "IG_AdaRMSuon", "AdaMuon", "KFACRMSuon"]:
+             # This branch is now only for optimizers that don't take the model in the constructor
+             # but still need special param groups.
+            optimizer = OptimizerClass(init_params, **opt_config)
         else:
-             optimizer = OptimizerClass(init_params, **opt_config)
+            optimizer = OptimizerClass(init_params, **opt_config)
 
 
     pi_config = None

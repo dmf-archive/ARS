@@ -24,14 +24,24 @@ class Trainer:
         self.store = MetricStore()
         self.context: TrainerContext | None = None
 
-        # EMA-PPL state
+        # Adaptive Weight Decay States
         self.adaptive_wd_config = self.config.get("adaptive_wd", {})
         self.adaptive_wd_enabled = self.adaptive_wd_config.get("enabled", False)
         if self.adaptive_wd_enabled:
+            self.wd_mode = self.adaptive_wd_config.get("mode", "ipcwd")
+            self.ema_beta = self.adaptive_wd_config.get("ema_beta", 0.98)
+
+            # State for Inverse PPL-Coupled Weight Decay (iPCWD)
             self.ema_ppl = 0.0
-            self.ema_beta = self.adaptive_wd_config.get("ema_beta", 0.99)
             self.wd_gamma = self.adaptive_wd_config.get("gamma", 0.1)
             self.wd_base = self.adaptive_wd_config.get("base_wd", 1e-4)
+
+            # State for Proportional-Control Weight Decay (PC-WD)
+            self.ema_loss = 0.0
+            self.pcwd_alpha = self.adaptive_wd_config.get("alpha", 0.01)
+            self.lambda_min = self.adaptive_wd_config.get("lambda_min", 0.01)
+            self.lambda_max = self.adaptive_wd_config.get("lambda_max", 1.0)
+            self.current_lambda = -1.0  # Uninitialized
 
     def _broadcast(self, event: str):
         for cb in self.callbacks:
@@ -96,29 +106,54 @@ class Trainer:
                     self._broadcast("on_step_begin")
 
                     logits, loss_tensor, _ = current_task.train_step(
-                        model=self.model, batch=batch, criterion=self.criterion, optimizer=self.optimizer,
+                        model=self.model, batch=batch, criterion=self.criterion,
                         device=self.device,
-                        needs_second_order=optimizer_tags.get("requires_second_order", False),
-                        optimizer_handles_backward=optimizer_tags.get("requires_loss_for_step", False)
+                        needs_second_order=optimizer_tags.get("requires_second_order", False)
                     )
 
                     if self.adaptive_wd_enabled:
-                        ppl_batch = torch.exp(loss_tensor.detach()).item()
-                        if self.ema_ppl == 0.0:
-                            self.ema_ppl = ppl_batch
-                        else:
-                            self.ema_ppl = self.ema_beta * self.ema_ppl + (1 - self.ema_beta) * ppl_batch
-                        
-                        # Inverse PPL-Coupled Weight Decay (iPCWD)
-                        # A linear relationship is more stable than exponential
-                        adaptive_wd = self.wd_base * (1 + self.wd_gamma * self.ema_ppl)
-                        
+                        loss_item = loss_tensor.detach().item()
+                        adaptive_wd = self.optimizer.param_groups[0]['weight_decay']
+
+                        if self.wd_mode == "ipcwd":
+                            ppl_batch = torch.exp(torch.tensor(loss_item)).item()
+                            if self.ema_ppl == 0.0:
+                                self.ema_ppl = ppl_batch
+                            else:
+                                self.ema_ppl = self.ema_beta * self.ema_ppl + (1 - self.ema_beta) * ppl_batch
+                            adaptive_wd = self.wd_base * (1 + self.wd_gamma * self.ema_ppl)
+
+                        elif self.wd_mode == "pcwd":
+                            if self.current_lambda < 0:  # First step initialization
+                                self.current_lambda = self.optimizer.param_groups[0]['weight_decay']
+
+                            if self.ema_loss == 0.0:
+                                self.ema_loss = loss_item
+                                delta_loss = 0.0
+                            else:
+                                prev_ema_loss = self.ema_loss
+                                self.ema_loss = self.ema_beta * self.ema_loss + (1 - self.ema_beta) * loss_item
+                                delta_loss = self.ema_loss - prev_ema_loss
+
+                            control_signal = -torch.log(torch.abs(torch.tensor(delta_loss)) + 1e-8).item()
+
+                            if delta_loss < 0:  # Loss is decreasing
+                                self.current_lambda *= (1 + self.pcwd_alpha * control_signal)
+                            else:  # Loss is increasing or stagnant
+                                self.current_lambda /= (1 + self.pcwd_alpha * control_signal)
+
+                            adaptive_wd = torch.clamp(torch.tensor(self.current_lambda), self.lambda_min, self.lambda_max).item()
+                            self.current_lambda = adaptive_wd
+
                         for group in self.optimizer.param_groups:
                             group['weight_decay'] = adaptive_wd
 
-                    closure = lambda: loss_tensor
+                    self.optimizer.zero_grad()
+                    if not optimizer_tags.get("handles_backward_pass", False):
+                        loss_tensor.backward(create_graph=optimizer_tags.get("requires_second_order", False))
+
                     if optimizer_tags.get("requires_loss_for_step", False):
-                        self.optimizer.step(closure)
+                        self.optimizer.step(loss_tensor)
                     else:
                         self.optimizer.step()
 
@@ -160,7 +195,10 @@ class Trainer:
 
                 avg_grad_norm_tensor = None
                 if epoch_grad_norm_list:
-                    avg_grad_norm_tensor = torch.stack(epoch_grad_norm_list).mean()
+                    # Ensure all items are tensors before stacking
+                    tensor_list = [t for t in epoch_grad_norm_list if isinstance(t, torch.Tensor)]
+                    if tensor_list:
+                        avg_grad_norm_tensor = torch.stack(tensor_list).mean()
 
                 avg_grad_norm = avg_grad_norm_tensor.item() if avg_grad_norm_tensor is not None else None
 
@@ -168,8 +206,8 @@ class Trainer:
                 if pi_calculator and num_tokens_in_epoch > 0:
                     avg_entropy_tensor = epoch_entropy_sum / num_tokens_in_epoch
                     avg_entropy = avg_entropy_tensor.item()
-                    if avg_grad_norm_tensor is not None:
-                        _, avg_pi_obj = pi_calculator.calculate_pi(avg_entropy_tensor, avg_grad_norm_tensor)
+                    if avg_grad_norm is not None:
+                        _, avg_pi_obj = pi_calculator.calculate_pi(avg_entropy_tensor, avg_grad_norm)
 
                 diagnostics = getattr(self.optimizer, 'diagnostics', None)
 

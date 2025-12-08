@@ -1,6 +1,7 @@
 import torch
 from torch.optim.optimizer import Optimizer
 
+
 @torch.jit.script
 def zeropower_via_newtonschulz5(G: torch.Tensor, steps: int = 5) -> torch.Tensor:
     assert G.ndim >= 2
@@ -122,7 +123,7 @@ class AdaRMSuon(Optimizer):
             # 3. Spectral Filtering
             original_shape = m_scaled.shape
             m_scaled_flat = m_scaled.view(m_scaled.size(0), -1) if p.ndim == 4 else m_scaled
-            
+
             s_ortho = zeropower_via_newtonschulz5(m_scaled_flat, steps=ns_steps)
 
             if p.ndim == 4:
@@ -132,10 +133,10 @@ class AdaRMSuon(Optimizer):
             # The NS iteration normalizes the spectral norm to ~1.
             # We need to scale it by the original energy of the pre-whitened momentum.
             update = energy * s_ortho
-            
+
             if weight_decay != 0:
                 p.mul_(1 - lr * weight_decay)
-            
+
             p.add_(update, alpha=-lr)
 
     def _adamw_step(self, group: dict):

@@ -1,29 +1,31 @@
-import torch
 import math
-from torch.optim.optimizer import Optimizer
+
+import torch
 from torch.nn.functional import unfold
+from torch.optim.optimizer import Optimizer
 
 from .kfac_utils import update_running_stat
 from .muon import zeropower_via_newtonschulz5
+
 
 class KFACRMSuon(Optimizer):
     def __init__(self, param_groups, model=None, **kwargs):
         if model is None:
             raise ValueError("KFACRMSuon requires a model to be passed in.")
-        
-        defaults = dict(lr=kwargs.get('lr', 1e-3), 
+
+        defaults = dict(lr=kwargs.get('lr', 1e-3),
                         betas=kwargs.get('betas', (0.9, 0.999)),
                         eps=kwargs.get('eps', 1e-8),
                         weight_decay=kwargs.get('weight_decay', 0),
-                        stat_decay=kwargs.get('stat_decay', 0.95), 
-                        TCov=kwargs.get('TCov', 10), 
-                        damping=kwargs.get('damping', 0.001), 
+                        stat_decay=kwargs.get('stat_decay', 0.95),
+                        TCov=kwargs.get('TCov', 10),
+                        damping=kwargs.get('damping', 0.001),
                         ns_steps=kwargs.get('ns_steps', 5))
         super().__init__(param_groups, defaults)
 
         self.param_groups_kfac = [pg for pg in self.param_groups if pg.get('use_kfac_rmsuon', False)]
         self.param_groups_adam = [pg for pg in self.param_groups if not pg.get('use_kfac_rmsuon', False)]
-        
+
         self.model = model
         self.known_modules = {'Linear', 'Conv2d'}
         self.modules = []
@@ -35,7 +37,7 @@ class KFACRMSuon(Optimizer):
     def _save_input(self, module, input):
         if torch.is_grad_enabled() and self.steps % self.param_groups_kfac[0].get('TCov', 10) == 0:
             a = input[0].data
-            
+
             if isinstance(module, torch.nn.Conv2d):
                 a = unfold(a, module.kernel_size, padding=module.padding, stride=module.stride)
                 a = a.permute(0, 2, 1).contiguous().view(-1, a.size(1))
@@ -45,7 +47,7 @@ class KFACRMSuon(Optimizer):
 
             if module.bias is not None:
                 a = torch.cat([a, a.new_ones(a.size(0), 1)], 1)
-            
+
             aa_diag = (a * a).sum(dim=0) / a.size(0)
             if self.steps == 0 or module not in self.m_aa:
                 self.m_aa[module] = torch.ones_like(aa_diag)
@@ -59,7 +61,7 @@ class KFACRMSuon(Optimizer):
             else: # Linear
                 if g.ndim > 2:
                     g = g.reshape(-1, g.size(-1))
-            
+
             gg_diag = (g * g).sum(dim=0) / g.size(0)
             if self.steps == 0 or module not in self.m_gg:
                 self.m_gg[module] = torch.ones_like(gg_diag)
@@ -88,7 +90,7 @@ class KFACRMSuon(Optimizer):
         damping = group['damping']
         ns_steps = group['ns_steps']
         beta1, _ = group['betas']
-        
+
         group_modules = [m for m in self.modules if any(p is p_in_group for p_in_group in group['params'] for p in m.parameters())]
 
         for m in group_modules:
@@ -96,11 +98,11 @@ class KFACRMSuon(Optimizer):
                 continue
 
             grad_mat = self._get_matrix_form_grad(m)
-            
+
             param_state = self.state[m.weight]
             if 'momentum_buffer' not in param_state:
                 param_state['momentum_buffer'] = torch.zeros_like(grad_mat)
-            
+
             buf = param_state['momentum_buffer']
             buf.mul_(beta1).add_(grad_mat, alpha=1 - beta1)
             m_hat = buf
@@ -109,11 +111,8 @@ class KFACRMSuon(Optimizer):
             A_inv_diag = 1.0 / (self.m_aa.get(m) + damping)
             G_inv_diag = 1.0 / (self.m_gg.get(m) + damping)
 
-            if m.bias is not None:
-                 A_inv_diag_ = A_inv_diag[:-1]
-            else:
-                 A_inv_diag_ = A_inv_diag
-            
+            A_inv_diag_ = A_inv_diag[:-1] if m.bias is not None else A_inv_diag
+
             preconditioned_grad = m_hat * (G_inv_diag.unsqueeze(1) * A_inv_diag_.unsqueeze(0))
 
             energy = preconditioned_grad.norm()
@@ -123,11 +122,11 @@ class KFACRMSuon(Optimizer):
             if m.bias is not None and m.bias.grad is not None:
                 update_w = update[:, :-1].reshape(m.weight.shape)
                 update_b = update[:, -1:].reshape(m.bias.shape)
-                
+
                 if weight_decay != 0:
                     m.weight.data.add_(m.weight.data, alpha=-weight_decay * lr)
                     m.bias.data.add_(m.bias.data, alpha=-weight_decay * lr)
-                
+
                 m.weight.data.add_(update_w, alpha=-lr)
                 m.bias.data.add_(update_b, alpha=-lr)
             else:
@@ -155,7 +154,7 @@ class KFACRMSuon(Optimizer):
 
             exp_avg.mul_(beta1).add_(grad, alpha=1 - beta1)
             exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
-            
+
             step_size = group['lr'] / bias_correction1
             denom = (exp_avg_sq.sqrt() / math.sqrt(bias_correction2)).add_(group.get('eps', 1e-8))
 
@@ -166,7 +165,7 @@ class KFACRMSuon(Optimizer):
     def step(self, closure=None):
         for group in self.param_groups_kfac:
             self._kfac_rmsuon_step(group)
-        
+
         for group in self.param_groups_adam:
             self._adam_step(group)
 

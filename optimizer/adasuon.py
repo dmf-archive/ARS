@@ -145,12 +145,12 @@ class AdaSuon(torch.optim.Optimizer):
             bias_correction2 = 1 - beta2 ** step
             m_hat = exp_avg / bias_correction1
             v_hat = exp_avg_sq / bias_correction2
-            
+
             original_shape = m_hat.shape
             m_hat_flat = m_hat.view(m_hat.size(0), -1) if p.ndim == 4 else m_hat
-            
+
             O = zeropower_via_newtonschulz5(m_hat_flat, steps=ns_steps)
-            
+
             if p.ndim == 4:
                 O = O.view(original_shape)
 

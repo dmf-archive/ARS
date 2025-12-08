@@ -2,14 +2,14 @@ import importlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .base import Task
+    from .base import BaseTask
 
 
-def get_task(name: str, config: dict) -> "Task":
+def get_task(name: str, config: dict) -> "BaseTask":
     try:
         if name == "wikitext2_line":
             module = importlib.import_module("task.wikitext2_line")
-            task_class = getattr(module, "Wikitext2LineTask")
+            task_class = module.Wikitext2LineTask
         else:
             module = importlib.import_module(f"task.{name}")
             task_class_name = "".join(part.capitalize() for part in name.split('_')) + "Task"
