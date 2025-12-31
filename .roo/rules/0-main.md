@@ -79,9 +79,16 @@ last_updated: "2025-11-16"
 
 - **AC-001**: 代码通过`ruff check . --fix`（可选`ruff check . --fix; mypy .`）
 - **AC-002**: 依赖正确管理
-- **AC-003**: 启动命令格式为`python -m exp.<name>`
+- **AC-003**: 启动命令格式为`python -m exp.<name>`，实验流水线启动：`python -m scripts.train --config config/cifar10.toml`
 - **AC-004**: 原子重塑保持 API 完全透明
 
 ## 边缘情况
 
 - **GUD-401**: 编辑器短暂格式错误警告应忽略，持续存在再处理
+
+## 新优化器
+
+为保证框架的可扩展性，添加新优化器需遵循：
+
+1. **REQ-EXT-001**：在 `optimizer/` 目录下创建新文件（如 `my_optimizer.py`），并实现新的优化器。
+2. **REQ-EXT-002**：在 `optimizer/__init__.py` 的 `get_optimizer` 工厂函数中添加 `elif` 分支，用于导入和实例化它。

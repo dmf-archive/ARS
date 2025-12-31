@@ -5,7 +5,7 @@
 {
   "experiment": {
     "tasks": [
-      "wikitext2"
+      "wikitext2_line"
     ],
     "seed": 42,
     "device": "cuda"
@@ -23,19 +23,25 @@
   },
   "data": {
     "batch_size": 8,
-    "num_workers": 4,
+    "num_workers": 0,
     "tokenizer_path": "./data/wikitext2_tokenizer.json"
   },
   "optimizer": {
-    "name": "RMSuon",
+    "name": "AdaMuon",
     "lr": 0.0001,
     "betas": [
-      0.9,
-      0.999
+      0.95,
+      0.95
     ],
     "eps": 1e-08,
     "weight_decay": 0.1,
-    "ns_steps": 5
+    "ns_steps": 5,
+    "adam_lr": 0.001,
+    "adam_weight_decay": 0.01,
+    "adam_betas": [
+      0.9,
+      0.999
+    ]
   },
   "train": {
     "epochs": 5,
@@ -48,12 +54,12 @@
 ## Training Results
 | Epoch | Task | Train Loss | LR | PI | Eff. Gamma | Entropy | Grad Norm | Epoch Time (s) | Peak GPU Mem (MB) | Eval Loss | Eval Perplexity |
 |-------|------|------------|----|----|------------|---------|-----------|----------------|-------------------|-----------|-----------------|
-| 1 | wikitext2 | 6.2467 | 0.000100 | 0.000 | N/A | 6.615 | 1.8024 | 683.69 | 2984.5 | 5.69 | 297.26 |
-| 2 | wikitext2 | 5.0733 | 0.000100 | 0.001 | N/A | 5.479 | 2.1205 | 721.41 | 2984.5 | 5.32 | 204.06 |
-| 3 | wikitext2 | 4.4127 | 0.000100 | 0.000 | N/A | 4.925 | 2.6901 | 698.74 | 2984.5 | 5.25 | 189.76 |
-| 4 | wikitext2 | 3.8043 | 0.000100 | 0.000 | N/A | 4.438 | 3.4547 | 705.99 | 2984.5 | 5.35 | 211.53 |
-| 5 | wikitext2 | 3.2102 | 0.000100 | 0.000 | N/A | 3.963 | 4.2650 | 704.69 | 2984.5 | 5.60 | 270.23 |
+| 1 | wikitext2_line | 5.8332 | 0.000100 | 0.023 | N/A | 0.000 | 3.7761 | 605.19 | 2784.7 | 5.11 | 165.69 |
+| 2 | wikitext2_line | 4.5365 | 0.000100 | 0.012 | N/A | 0.000 | 4.3980 | 607.05 | 2783.9 | 4.87 | 130.65 |
+| 3 | wikitext2_line | 4.0999 | 0.000100 | 0.009 | N/A | 0.000 | 4.6596 | 605.49 | 2783.9 | 4.83 | 125.46 |
+| 4 | wikitext2_line | 3.7914 | 0.000100 | 0.006 | N/A | 0.000 | 5.0746 | 609.61 | 2783.9 | 4.88 | 131.83 |
+| 5 | wikitext2_line | 3.5452 | 0.000100 | 0.004 | N/A | 0.000 | 5.6042 | 603.60 | 2783.9 | 4.99 | 147.60 |
 
 ## Performance Summary
-- **Best Validation Metrics**: wikitext2 Loss: 5.69, wikitext2 Perplexity: 189.76
-- **Final Validation Metrics**: wikitext2: {"loss": 5.599276789303484, "perplexity": 270.23090285969965}
+- **Best Validation Metrics**: wikitext2_line Loss: 5.11, wikitext2_line Perplexity: 125.46
+- **Final Validation Metrics**: wikitext2_line: {"loss": 4.994485225250472, "perplexity": 147.59694664279547}

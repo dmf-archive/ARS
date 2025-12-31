@@ -1,103 +1,94 @@
-# RMSuon: Energy-Geometry Decoupling Optimizer
+# RMSuon 家族：在黎曼流形上滑行
 
-**状态**: 生产就绪 (2025-11-28)  
-**核心贡献**: FEP/IPWT 框架下 SOO-OFE 路径的工程实验，确立了“能量-几何解耦”的算子复合范式。
+状态: 生产就绪 (2025-12-31)
+核心贡献: 确立了“能量-几何解耦” (Energy-Geometry Decoupling) 的算子复合范式，并为探索 Geodesic SAM 提供了理论与工程基础。
 
-## 1. 核心理论：能量-几何解耦
+## 1. 理论演进：从下山到滑行
 
-RMSuon 是对感知推断过程的最简工程近似，通过算子复合解决 OFE-EFE 对偶性危机：
+### 1.1 优化的本质：在测地线上滑行
 
-- **统计算子 (AdamW)**: 提供 **Energy (能量)**。
-  - 计算 `energy = ||m̂ / (√v̂ + ε)||` (Frobenius 范数)。
-  - 物理含义：量化参数沿自然梯度方向更新的统计强度，即“自然梯度下降”。
-- **结构算子 (Muon)**: 提供 **Geometry (几何)**。
-  - 计算 `O_t = NewtonSchulz(m̂)`。
-  - 物理含义：在参数流形上构建信息几何信任区，强制更新轨迹满足最小描述长度原则，即“无冗余更新”。
-- **解耦机制**:
-  - `g_update = scale * O_t`
+在信息几何视角下，优化不仅是损失函数 `L(θ)` 的梯度下降，更是概率分布流形上的测地线运动。RMSuon 旨在通过解耦“步伐的大小”（能量统计）与“迈步的方向”（流形几何）来逼近这一理想状态。
 
-## 2. 算法实现与对比
+### 1.2 问题：不同的优化器，对地形的假设不同
 
-### 核心代码逻辑
+- SGD: 假设欧几里得平直空间。它是“盲人登山者”，仅凭局部坡度 `∇L` 迈步，在病态曲率下极易震荡。
+- Adam/RMSProp: 引入二阶矩 `vₜ` 修正尺度。它能感知地形的“颠簸程度”（元不确定性），实现元素级自适应。但其逐元素 (element-wise) 的视角忽略了参数间的相关性，本质上是在做平行的标量优化。
 
-```python
-if param.ndim >= 2:
-    # 1. 统计步：获取 AdamW 动量
-    m_t, v_t = adamw_step(g_t)
-    m_hat, v_hat = bias_correction(m_t, v_t)
-    
-    # 2. 解耦步：提取能量与几何 (AdaRMSuon 修正版)
-    m_scaled = m_hat / (sqrt(v_hat) + eps)  # 预白化
-    energy = norm(m_scaled)                 # 提取能量
-    O_t = newton_schulz(m_scaled)           # 提取几何
-    
-    # 3. 复合步
-    scale = energy / (norm(O_t) + eps)
-    param = param - lr * scale * O_t
-else:
-    standard_adamw_update()
-```
+### 1.3 Muon
 
-### Muon 家族谱系
+[`Muon`](optimizer/muon.py) 引入了严格的几何约束：要求更新量必须是“正交”的。
 
-| 优化器 | 核心机制 | 适应性粒度 | 理论特征 |
-| :--- | :--- | :--- | :--- |
-| **RMSuon** | 能量-几何解耦 | **层级 (Layer-wise)** | 保持正交流形拓扑完整性，物理图像最清晰 |
-| **AdaMuon** | 方差自适应 | 元素级 (Element-wise) | 引入 Sign 变换，理论推导严谨 |
-| **NorMuon** | 神经元均衡 | 神经元级 (Neuron-wise) | 解决神经元范数不均衡问题 |
+- Stiefel 流形: 更新量 `Δθ` 被投影至 Stiefel 流形（满足 `UᵀU = I` 的矩阵集合）。
+- 纯粹旋转: 投影通过 Newton-Schulz 迭代 `𝒫ₛₜ(X)` 实现。这保证了每一步都在改变特征空间的“基向量方向”，而非“模长强度”，从而从根本上消除了内部协变量偏移。
 
-- **关键洞察**: 实验证明，逐元素自适应（如 `diag(1/√v) * O_t`）会破坏正交流形的等距性（σ₁ ≠ 1）。RMSuon 坚持层级耦合，在 Wikitext-2 上表现优于破坏拓扑结构的变体。
+### 1.4 RMSuon
 
-## 3. 实验演进记录
+[`RMSuon`](optimizer/rmsuon.py) 提出了第一个解耦方案：
 
-### 阶段一：Wikitext-2 Line Mode
+- 几何 (Geometry): 信任 Muon 的正交化动量 `𝒫ₛₜ(mₜ)` 提供的方向稳定性。
+- 能量 (Energy): 信任 Adam 的宏观统计。从 Adam 更新量中提取 Frobenius 范数作为标量能量：
+  `E = ‖m̂ₜ / (√(v̂ₜ) + ε)‖_F`
+- 算子复合: 让正交化的“芭蕾舞步”根据 Adam 观测到的总体“环境能量”进行缩放。
 
-验证了 RMSuon 在高质量数据模式下的绝对优势。
+### 1.5 AdaRMSuon
 
-- **实验设置**: Qwen3 (RoPE), Context 255, Line Mode (按句打包)。
-- **关键结果**:
-  - **Epoch 1 PPL**: RMSuon (**146.52**) vs Muon (233.30)。RMSuon 首轮即达到 Muon 最终水平。
-  - **Best PPL**: RMSuon (**99.07** @ Ep3) vs Muon (161.09 @ Ep5)。
-- **结论**: 统计-结构协同带来了收敛速度与最终性能的双重飞跃。
+[`AdaRMSuon`](optimizer/ada_rmsuon.py) 进一步揭示了：原始梯度在弯曲流形上存在“几何畸变”。
 
-### 阶段二：AdaRMSuon
+- 预白化 (Pre-whitening): 并非直接投影动量，而是先用 `vₜ` 对梯度进行白化，获得近似的自然梯度 (Natural Gradient) `gₙₐₜ ≈ mₜ / √(vₜ)`。
+- 投影映射: 在预白化后的空间（更接近黎曼平直切空间）执行正交化投影 `𝒫ₛₜ(gₙₐₜ)`。
+- 形式化表达:
+  `Δθₜ = η ⋅ ‖gₙₐₜ‖_F ⋅ 𝒫ₛₜ(gₙₐₜ)`
+- 结论: 这使得模型能够沿着真正的测地线 (Geodesic) 滑行，在 Wikitext-2 实验中表现出断层级的收敛效率。
 
-修正了原始 RMSuon 实现中的理论不一致性。
+## 2. 实验对比：Wikitext-2
 
-- **修正点**: 能量提取和几何正交化均作用于经过 Fisher 预白化的“自然梯度” `m_scaled`，而非原始动量 `m_hat`。
-- **关键结果**:
-  - **Best PPL**: AdaRMSuon (**83.88**) vs RMSuon (99.07)。
-- **结论**: 理论闭环直接转化为显著的性能增益，确立 AdaRMSuon 为新基线。
+实验设置: Qwen3 (RoPE), Context 255
 
-### 阶段三：Long-term Stability
+### 2.1 5 Epoch 快速测试
 
-通过 30 Epoch 长跑实验，揭示了当前框架的理论边界。
+> 标准 wikitext2 line mode 实验
 
-- **现象**:
-  - **极速收敛**: Epoch 3 达到峰值，速度是 Muon 的 2 倍。
-  - **灾难性过拟合**: PPL 从最佳的 190 恶化至 **54930** (Epoch 30)，恶化倍数达 288 倍（Muon 仅 1.8 倍）。
-  - **梯度爆炸**: 梯度范数从 1.82 攀升至 4.81，几何约束失效。
-- **消融实验 (无权重衰减)**:
-  - WD=0 时，PPL 在 Epoch 8 即劣化至 1037。
-  - 证明 Weight Decay 充当了必要的“几何正则化器”，补偿结构算子的长期衰减。
+| 优化器 | 核心机制 | Best PPL | Final PPL | Grad Norm (End) |
+| :--- | :--- | :--- | :--- | :--- |
+| AdaRMSuon | Pre-white + NS + Energy | 83.88 | 87.61 | 0.92 |
+| RMSuon (v1) | AdamW + NS + Energy | 99.07 | 134.11 | ~3.7 |
+| AdaMuon | Sign + NS + Element-wise | 125.46 | 147.60 | ~5.6 |
+| Muon | SGD + NS | 161.09 | 161.09 | ~1.1 |
+| AdamW | Standard | 104.68 | 250.82 | ~4.5 |
 
-## 4. 理论边界分析
+结论:
 
-RMSuon/AdaRMSuon 的成功与失败均源于同一个根源：它依然是 **Loss 优化器** 而非 **Free Energy 优化器**。
+1. AdaRMSuon 性能断层领先。
+2. AdaMuon 不如初版的 RMSuon，证明其 sign(m) 的信息损失和元素级自适应的流形破坏是致命的。
+3. 纯 Muon 缺乏自适应能力，收敛速度较慢。
 
-- **自由能公式**: `F = D_KL[q(θ|o) || p(θ)] (复杂度) - E_q[ln p(o|θ)]` (准确度)
-- **代理谬误**: RMSuon 将 ∇L（准确度梯度）作为 ∇F 的完全代理，忽略了复杂度项 D_KL。
-- **动力学后果**:
-  - **短期**: 欠拟合阶段 ∇L 主导，RMSuon 凭借几何效率极速收敛。
-  - **长期**: 过拟合阶段 `D_KL` 约束缺失，优化器高效地将模型推向高复杂度的过拟合区域。
+### 2.2 30 Epoch 马拉松：过拟合的动力学
 
-## 5. 未来展望
+> 此实验使用已清理的 chunk mode wikitext2
+> `outputs\wikitext2_rope_muon_epoch30`
+> `outputs\wikitext2_rope_rmsuon_epoch30`
 
-1. **在线复杂度估计**: 开发能内生整合 `∇D_KL` 信号的机制，弥合 L 与 F 的鸿沟。
-2. **数据标准化**: 所有语言模型实验默认采用 `line mode`，确保语义完整性。
-3. **基线升级**: 全面切换至 `AdaRMSuon` 实现。
+| 优化器 | Best PPL (Epoch) | Final PPL (Epoch 30) | 过拟合倍数 | 稳定性分析 |
+| :--- | :--- | :--- | :--- | :--- |
+| RMSuon | 190.63 (Ep 3) | ~54930 | ~288x | 极速收敛，灾难性过拟合。证明其寻找最小值的效率极高，但完全没有复杂度控制，容易陷入局部极小值。 |
+| Muon | 329.99 (Ep 6) | ~587 | ~1.78x | 缓慢收敛，轻微过拟合。其内在的谱约束自带一种隐式正则化，但效率太低。 |
 
-## 6. 参考文献
+- RMSuon: 第 3 Epoch 即达到最优 PPL (190.6)，随后发生灾难性过拟合（30 Epoch 时 PPL > 50000），Muon后期缓慢过拟合。
+- RMSuon 能以最高效的路径找到当前训练集的极小值，但也由于缺乏复杂度控制，容易陷入那些极其狭窄、泛化能力差的尖锐谷底 (Sharp Minima)。
+
+## 3. 总结：我们需要更好的复杂度控制
+
+AdaRMSuon 的成功与失败一体两面：它是一个极其高效的 Loss 优化器，但正因如此，它会毫不犹豫地将模型推向高复杂度的过拟合区域。
+
+这证明，单纯沿着测地线滑行是不够的。我们还需要在滑行时，主动避开那些“狭窄而尖锐”的山谷，去寻找那些“宽阔平坦”的盆地。
+
+下一阶段核心目标：引入复杂度约束 (Complexity Control)
+
+- Geodesic SAM: 不再是在欧氏空间做球形扰动，而是在 AdaRMSuon 定义的测地线方向上进行流形扰动。
+- 寻找“平坦盆地”: 在滑行的同时，通过扰动探测地形的二阶平坦度，主动避开尖锐谷底。
+- 目标: 实现极速收敛与强泛化的最终统一。
+
+## 4. 参考文献
 
 - [1] L. Rui, "Integrated Predictive Workspace Theory," Zenodo, 2025.
 - [2] Kingma & Ba, "Adam: A method for stochastic optimization," ICLR 2015.
