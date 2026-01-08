@@ -51,6 +51,14 @@ class MDLogger(Callback):
 
         headers = ["Epoch", "Task", "Train Loss", "LR", "PI", "Eff. Gamma", "Entropy", "Grad Norm", "Epoch Time (s)", "Peak GPU Mem (MB)"]
 
+        # Add diagnostic headers
+        diag_keys: set[str] = set()
+        for epoch in epoch_data:
+            if epoch.diagnostics:
+                diag_keys.update(epoch.diagnostics.keys())
+        sorted_diag_keys = sorted(list(diag_keys))
+        headers.extend([f"Diag {key}" for key in sorted_diag_keys])
+
         metric_keys: set[str] = set()
         for epoch in epoch_data:
             metric_keys.update(epoch.task_metrics.metrics.keys())
@@ -76,6 +84,15 @@ class MDLogger(Callback):
             row += f"| {data.grad_norm:.4f} " if data.grad_norm is not None else "| N/A "
             row += f"| {data.epoch_time_s:.2f} " if data.epoch_time_s is not None else "| N/A "
             row += f"| {data.peak_gpu_mem_mb:.1f} " if data.peak_gpu_mem_mb is not None else "| N/A "
+
+            for key in sorted_diag_keys:
+                diag_val = data.diagnostics.get(key) if data.diagnostics else None
+                if isinstance(diag_val, float):
+                    row += f"| {diag_val:.4f} "
+                elif diag_val is not None:
+                    row += f"| {diag_val} "
+                else:
+                    row += "| N/A "
 
             for key in sorted_metric_keys:
                 metric_val = data.task_metrics.metrics.get(key)

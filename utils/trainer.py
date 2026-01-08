@@ -278,6 +278,9 @@ class Trainer:
                         _, avg_pi_obj = pi_calculator.calculate_pi(avg_entropy_tensor, avg_grad_norm)
 
                 diagnostics = getattr(self.optimizer, 'diagnostics', None)
+                if diagnostics is not None:
+                    import copy
+                    diagnostics = copy.deepcopy(diagnostics)
 
                 epoch_metric = EpochMetric(
                     task_name=task_name, task_epoch=len(self.store.get_history_for_task(task_name)),

@@ -125,7 +125,41 @@ class ARSOptimizer(Optimizer):
         with torch.no_grad():
             self._ada_rmsuon_update(global_step)
         
+        # 4. Diagnostics Collection
+        if not is_sync_step:
+            self._collect_diagnostics(global_step, k)
+        
         return loss
+
+    @torch.no_grad()
+    def _collect_diagnostics(self, global_step, k):
+        cos_sims = []
+        for group in self.param_groups:
+            for p in group['params']:
+                if p.grad is None: continue
+                state = self.state[p]
+                if 'flatness_v' in state:
+                    v = state['flatness_v']
+                    dot = (p.grad * v).sum()
+                    gnorm = p.grad.norm()
+                    vnorm = v.norm()
+                    cos = dot / (gnorm * vnorm + 1e-12)
+                    cos_sims.append(cos.item())
+        
+        if cos_sims:
+            if not hasattr(self, 'diagnostics'):
+                self.diagnostics = {}
+            
+            avg_cos = sum(cos_sims) / len(cos_sims)
+            # Track per-position in cycle (1 is sync, 2..k, 0 are lazy)
+            pos = global_step % k
+            key = f'cos_pos_{pos}'
+            
+            if key not in self.diagnostics:
+                self.diagnostics[key] = avg_cos
+            else:
+                # Simple EMA for diagnostics to see trends over epoch
+                self.diagnostics[key] = 0.9 * self.diagnostics[key] + 0.1 * avg_cos
 
     @torch.no_grad()
     def _ada_rmsuon_update(self, global_step):
