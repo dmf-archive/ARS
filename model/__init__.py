@@ -15,5 +15,8 @@ def get_model(name: str, num_classes: int = 10, **kwargs):
     elif name == "nano_gpt":
         from .nano_gpt import MiniGPT1 as nano_gpt
         return nano_gpt(vocabulary_size=num_classes, **kwargs)
+    elif name == "grokking_transformer":
+        from .grokking_transformer import GrokkingTransformer
+        return GrokkingTransformer(d_vocab=num_classes, **kwargs)
     else:
         return None

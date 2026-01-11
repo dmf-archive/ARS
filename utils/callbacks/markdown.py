@@ -49,7 +49,7 @@ class MDLogger(Callback):
     def _generate_report(self, epoch_data: list["EpochMetric"], config: dict) -> str:
         task_names = sorted(list(set(e.task_name for e in epoch_data)))
 
-        headers = ["Epoch", "Task", "Train Loss", "LR", "PI", "Eff. Gamma", "Entropy", "Grad Norm", "Epoch Time (s)", "Peak GPU Mem (MB)"]
+        headers = ["Epoch", "Task", "Train Loss", "Min Loss", "Min Step", "LR", "PI", "Eff. Gamma", "Entropy", "Grad Norm", "Epoch Time (s)", "Peak GPU Mem (MB)"]
 
         # Add diagnostic headers
         diag_keys: set[str] = set()
@@ -73,6 +73,8 @@ class MDLogger(Callback):
             row = f"| {data.global_epoch + 1} "
             row += f"| {data.task_name} "
             row += f"| {data.avg_train_loss:.4f} "
+            row += f"| {data.min_train_loss:.4f} " if data.min_train_loss is not None else "| N/A "
+            row += f"| {data.min_loss_step} " if data.min_loss_step is not None else "| N/A "
             row += f"| {data.learning_rate:.6f} "
             pi_val = getattr(data, 'avg_pi_obj', None)
             if pi_val is not None:

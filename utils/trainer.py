@@ -75,7 +75,7 @@ class Trainer:
             optimizer=self.optimizer,
             store=self.store,
             scheduler=scheduler,
-            total_epochs=self.config["train"]["epochs"]
+            total_epochs=self.config["experiment"]["epochs"]
         )
 
         pi_gamma = pi_config.get("gamma", 1.0) if pi_config else 1.0
@@ -113,6 +113,8 @@ class Trainer:
                     torch.cuda.reset_peak_memory_stats()
 
                 epoch_loss_sum = torch.tensor(0.0, device=self.device)
+                min_train_loss = float('inf')
+                min_loss_step = -1
                 epoch_grad_norm_list = []
                 epoch_entropy_sum = torch.tensor(0.0, device=self.device)
                 num_tokens_in_epoch = 0
@@ -253,6 +255,27 @@ class Trainer:
                 with torch.no_grad():
                     task_metrics_dict = current_task.validate_epoch(self.model, valid_loaders[task_name], self.criterion, self.device)
                 task_metrics = TaskMetrics(metrics=task_metrics_dict)
+
+                # Early stopping for grokking
+                if task_metrics_dict.get("accuracy", 0.0) >= 99.9 or task_metrics_dict.get("loss", 1.0) < 0.001:
+                    print(f"Early stopping triggered: {task_name} accuracy reached {task_metrics_dict.get('accuracy', 0.0)}% or loss reached {task_metrics_dict.get('loss', 1.0)}")
+                    epoch_time = time.time() - epoch_start_time
+                    avg_train_loss = (epoch_loss_sum / len(current_train_loader)).item()
+                    epoch_metric = EpochMetric(
+                        task_name=task_name, task_epoch=len(self.store.get_history_for_task(task_name)),
+                        global_epoch=global_epoch,
+                        avg_train_loss=avg_train_loss,
+                        min_train_loss=min_train_loss if min_train_loss != float('inf') else None,
+                        min_loss_step=min_loss_step if min_loss_step != -1 else None,
+                        task_metrics=task_metrics,
+                        learning_rate=self.optimizer.param_groups[0]['lr'],
+                        epoch_time_s=epoch_time
+                    )
+                    self.store.add_epoch(epoch_metric)
+                    self._broadcast("on_epoch_end")
+                    self._broadcast("save")
+                    self._broadcast("on_train_end")
+                    return
 
                 epoch_time = time.time() - epoch_start_time
                 peak_gpu_mem_mb = None

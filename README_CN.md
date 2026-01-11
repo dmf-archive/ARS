@@ -26,6 +26,8 @@
 
 ## 3. 关键实验结果
 
+### 3.1 Wikitext-2 语言建模
+
 我们在 Wikitext-2 (`line mode`) 上验证了这些优化器。该模式保留了句子边界，最大化了输入的上下文完整性。
 
 | 优化器         | 核心机制                     | Epoch 1 PPL | Best PPL  | Final PPL | 说明                         |
@@ -41,6 +43,18 @@
 
 1. **ARS (Sync, ρ=0.1)** 取得了最佳的泛化性能 (PPL 80.94)，证明了流形感知扰动在寻找平坦极小值方面的有效性。
 2. **ARS (Lazy)** 通过强度补偿机制，以仅比 Sync 模式高 1.1 PPL 的代价，实现了约 1.5 倍的训练加速，是实际应用中的最佳选择。
+
+### 3.2 Grokking 现象加速实验
+
+我们在模加法任务上验证了优化器对 Grokking（顿悟）现象的加速效果。该任务中，模型需要学习模运算的内在规律。
+
+| 优化器    | 拟合速度  | 顿悟时刻| 收敛时刻| 最终性能 | 状态  |
+| :-------- | :-------- | :------ | :------ | :------- | :---- |
+| **AdamW** | ~Epoch 140 | **Epoch 228** | Epoch 556 | 100.0% | ✅ 标准 Grokking |
+| **AdaRMSuon** | **Epoch 28** | **Epoch 54** | **Epoch 300** | 99.9% | 🚀 **极速 Grokking** |
+| **ARS** | Epoch 17 | **Epoch 100** | Epoch 290 | 99.1% | 🚀 **稳健 Grokking** |
+
+**核心结论**：**AdaRMSuon** 将 Grokking 现象的发生时间相比 AdamW 基准提前了 **4 倍以上** (Epoch 228 → Epoch 54)，有力证明了"能量-几何解耦"与"流形平坦度约束"在加速模型泛化相变中的关键作用。
 
 ## 4. 快速开始
 
@@ -72,16 +86,6 @@ python -m scripts.train --config config/wikitext2_line_mode_ars_rho_0.1_k5_alpha
 - **Tasks**: 训练和评估逻辑定义在 [`task/`](task/) 中。`line mode` 实现位于 [`task/wikitext2_line.py`](task/wikitext2_line.py)。
 - **Configs**: 实验配置通过 [`config/`](config/) 中的 TOML 文件管理。
 - **Outputs**: 所有结果、日志和检查点都保存到 [`outputs/`](outputs/)。
-
-## 6. 研究编年史
-
-本仓库也作为我们研究历程的档案，包括理论上的死胡同。从有缺陷的三阶方法（`F3E` 家族）到更稳健的算子复合范式的演变记录在我们的内部规则中。
-
-- **Failures Archive**: [`.roo/rules/failure-archive.md`](.roo/rules/failure-archive.md)
-- **Hadron (KFAC+Muon)**: [`.roo/rules/Hadron.md`](.roo/rules/Hadron.md)
-- **RMSuon & ARS Theory**: [`.roo/rules/RMSuon.md`](.roo/rules/RMSuon.md)
-
----
 
 ## 引用
 

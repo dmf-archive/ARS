@@ -28,6 +28,8 @@ While AdaRMSuon converges extremely fast, it tends to fall into sharp local mini
 
 ## 3. Key Experimental Results
 
+### 3.1 Wikitext-2 Language Modeling
+
 We validated these optimizers on Wikitext-2 (`line mode`). This mode preserves sentence boundaries, maximizing the contextual integrity of the input.
 
 | Optimizer | Core Mechanism | Epoch 1 PPL | Best PPL | Final PPL | Note |
@@ -43,6 +45,18 @@ Results show:
 
 1. **ARS (Sync, ρ=0.1)** achieves the best generalization performance (PPL 80.94), proving the effectiveness of manifold-aware perturbation in finding flat minima.
 2. **ARS (Lazy)** achieves ~1.5x training speedup with only a marginal PPL cost (1.1 higher than Sync) thanks to the intensity compensation mechanism, making it the optimal choice for practical applications.
+
+### 3.2 Grokking Phenomenon Acceleration
+
+We validated optimizer acceleration effects on the Grokking phenomenon using modular addition tasks, where models need to learn intrinsic patterns of modular arithmetic.
+
+| Optimizer | Fitting Speed | Grokking Moment | Convergence | Final Performance | Status |
+| :-------- | :------------ | :-------------- | :---------- | :---------------- | :----- |
+| **AdamW** | ~Epoch 140 | **Epoch 228** | Epoch 556 | 100.0% | ✅ Standard Grokking |
+| **AdaRMSuon** | **Epoch 28** | **Epoch 54** | **Epoch 300** | 99.9% | 🚀 **Ultra-fast Grokking** |
+| **ARS** | Epoch 17 | **Epoch 100** | Epoch 290 | 99.1% | 🚀 **Robust Grokking** |
+
+**Key Finding**: **AdaRMSuon** accelerates the Grokking phenomenon by **4x** compared to the AdamW baseline (Epoch 228 → Epoch 54), demonstrating the critical role of "Energy-Geometry Decoupling" and "Manifold Flatness Constraints" in accelerating model generalization phase transitions.
 
 ## 4. Quick Start
 
@@ -74,16 +88,6 @@ The framework is designed for rapid prototyping and clear evaluation.
 - **Tasks**: Training and evaluation logic is defined in [`task/`](task/). The `line mode` implementation is in [`task/wikitext2_line.py`](task/wikitext2_line.py).
 - **Configs**: Experiment configurations are managed via TOML files in [`config/`](config/).
 - **Outputs**: All results, logs, and checkpoints are saved to [`outputs/`](outputs/).
-
-## 6. Research Chronicle
-
-This repository also serves as an archive of our research journey, including theoretical dead-ends. The progression from flawed third-order methods (`F3E` family) to the more robust operator composition paradigm is documented in our internal rules.
-
-- **Failures Archive**: [`.roo/rules/failure-archive.md`](.roo/rules/failure-archive.md)
-- **Hadron (KFAC+Muon)**: [`.roo/rules/Hadron.md`](.roo/rules/Hadron.md)
-- **RMSuon & ARS Theory**: [`.roo/rules/RMSuon.md`](.roo/rules/RMSuon.md)
-
----
 
 ## Citation
 

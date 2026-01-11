@@ -25,11 +25,13 @@ class EpochMetric:
     task_epoch: int
     global_epoch: int
     avg_train_loss: float
-    task_metrics: TaskMetrics
-    avg_pi_obj: PIObject | None
-    avg_entropy: float | None
-    grad_norm: float | None
-    learning_rate: float
+    min_train_loss: float | None = None
+    min_loss_step: int | None = None
+    task_metrics: TaskMetrics = field(default_factory=lambda: TaskMetrics(metrics={}))
+    avg_pi_obj: PIObject | None = None
+    avg_entropy: float | None = None
+    grad_norm: float | None = None
+    learning_rate: float = 0.0
     diagnostics: dict[str, Any] | None = None
     epoch_time_s: float | None = None
     peak_gpu_mem_mb: float | None = None

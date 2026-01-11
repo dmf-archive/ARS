@@ -1,0 +1,31 @@
+[experiment]
+seed = 42
+device = "cuda"
+tasks = ["mod_addition"]
+epochs = 15000
+save_interval = 1000
+
+[task]
+p = 113
+fraction = 0.3
+
+[data]
+batch_size = 512
+num_workers = 0
+
+[model]
+arch = "grokking_transformer"
+num_layers = 1
+d_model = 128
+d_mlp = 512
+d_head = 32
+num_heads = 4
+n_ctx = 3
+act_type = "ReLU"
+
+[optimizer]
+name = "Muon"
+lr = 0.02
+momentum = 0.95
+weight_decay = 0.01
+ns_steps = 5

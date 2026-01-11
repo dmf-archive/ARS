@@ -142,7 +142,23 @@
 - **强度补偿原理**: 在 Lazy Mode 下，由于平坦度向量 `v_flat` 的更新频率降低，必须通过增大注入强度 `alpha` 来维持其对轨迹的纠偏能力。
 - **二阶平稳性**: 实验证明 `v_flat` 在局部具有足够的几何平稳性，支持 `k=5` 级别的复用。
 
-## 5. 参考文献
+## 5. 有趣事实：命名混乱
+
+在开发过程中，我们发现了一个命名上的有趣事实：
+
+- **AdaRMSuon** 本身就可以缩写为 **ARS**
+- 而 **AdaRMSuon + SAM** 本应称为 **ARS2**
+
+这个混乱源于 RMSuon 是 RMS + Muon 的交错造词，AdaRMSuon 类似地延续了这一命名模式。
+
+**建议的清晰命名**：
+
+- **ARS** = AdaRMSuon (Ada + RMSuon)
+- **ARS2** = AdaRMSuon + SAM (带平坦度约束的版本)
+
+这反映了快速迭代研究中常见的命名债务——当概念演进速度超过命名体系时，就会产生这种有趣的冲突。
+
+## 6. 参考文献
 
 - [1] L. Rui, "Integrated Predictive Workspace Theory," Zenodo, 2025.
 - [2] Kingma & Ba, "Adam: A method for stochastic optimization," ICLR 2015.
