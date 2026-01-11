@@ -35,9 +35,9 @@ OPTIMIZER_REGISTRY: dict[str, OptimizerMetadata] = {
         d_2_requires_second_order=True
     ),
     "Muon": OptimizerMetadata(
-        cls_name="SingleDeviceMuonWithAuxAdam", module_name="muon", 
+        cls_name="SingleDeviceMuonWithAuxAdam", module_name="muon",
         grouping=GroupingStrategy.MUON, expects_param_groups=True,
-        extra_config_keys=["momentum"]
+        extra_config_keys=["momentum", "betas", "eps", "ns_steps"]
     ),
     "RMSuon": OptimizerMetadata(
         cls_name="RMSuon", module_name="rmsuon", 
@@ -74,6 +74,12 @@ OPTIMIZER_REGISTRY: dict[str, OptimizerMetadata] = {
         grouping=GroupingStrategy.RMSUON, expects_param_groups=True,
         d_1_step_takes_closure=True, d_2_requires_bn_protection=True,
         extra_config_keys=["betas", "eps", "rho", "k", "alpha", "adaptive_alpha"]
+    ),
+    "ARS2-Neo": OptimizerMetadata(
+        cls_name="SingleDeviceARS2Neo", module_name="ars2_neo",
+        grouping=GroupingStrategy.RMSUON, expects_param_groups=True,
+        d_1_step_takes_closure=True, d_2_requires_bn_protection=True,
+        extra_config_keys=["betas", "eps", "rho", "k", "alpha", "adaptive", "ns_steps"]
     ),
 }
 

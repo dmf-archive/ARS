@@ -306,7 +306,8 @@ class SingleDeviceMuonWithAuxAdam(torch.optim.Optimizer):
                     if len(state) == 0:
                         state["momentum_buffer"] = torch.zeros_like(p)
                     srm_gamma = group.get("srm_gamma", 0.0)
-                    update, _ = muon_update(p.grad, state["momentum_buffer"], beta=group["momentum"], srm_gamma=srm_gamma)
+                    ns_steps = group.get("ns_steps", 5)
+                    update, _ = muon_update(p.grad, state["momentum_buffer"], beta=group["momentum"], ns_steps=ns_steps, srm_gamma=srm_gamma)
                     p.mul_(1 - group["lr"] * group["weight_decay"])
                     p.add_(update.reshape(p.shape), alpha=-group["lr"])
             else:

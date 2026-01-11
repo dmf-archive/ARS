@@ -22,12 +22,6 @@
 **致命缺陷**:
 这在低维网格世界里是完美的，但在高维现实中是**计算不可行**的。为了计算 $G$，代理必须像拉普拉斯妖一样预演未来。实际上，这种方法往往退化为传统的强化学习：用策略梯度（Policy Gradient）去逼近 $G$，用手工设计的奖励函数去伪装成先验偏好。它许诺了一个统一理论，却在工程上重新发明了 RL 的轮子。
 
-**计算框架**：
-
-1. **生成模型**: 通常用 VAE 学习 `p(s, o | π)`，将高维观测映射到低维隐空间。
-2. **VI 建模不确定性**: 使用变分推断（VI）显式建模隐状态的后验 `q(s|o)`，量化代理对世界状态 `s` 的认知不确定性。
-3. **复杂度约束**: 对 VAE 的潜空间施加正则化（如 KL 散度），确保隐空间结构简洁可解释。
-
 > “RL-EFE is a beautiful cul-de-sac: Laplace's demon tries to price every tomorrow and is suffocated by its own weight.”
 
 ## 2. SOO-OFE (Second-Order Optimization - Observed Free Energy, SOO-OFE)
