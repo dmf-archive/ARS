@@ -135,6 +135,19 @@ class Trainer:
                     else:
                         logits, loss_tensor = None, None
 
+                    if self.adaptive_wd_enabled and loss_tensor is None and skip_initial:
+                        print(f"[WARNING] adaptive_wd is bypassed because loss_tensor is None in closure mode!")
+
+                    if self.adaptive_wd_enabled and loss_tensor is None and skip_initial:
+                        # 探针：检查 closure 模式下 adaptive_wd 是否被跳过
+                        pass
+
+                    if self.adaptive_wd_enabled and loss_tensor is None and skip_initial:
+                        print(f"[DEBUG] adaptive_wd is bypassed for {self.optimizer.__class__.__name__} (closure mode)")
+
+                    if self.adaptive_wd_enabled and loss_tensor is None and skip_initial:
+                        print(f"[DEBUG] Step {self.context.global_step}: adaptive_wd bypassed (closure mode)")
+
                     if self.adaptive_wd_enabled and loss_tensor is not None:
                         loss_item = loss_tensor.detach().item()
                         adaptive_wd = self.optimizer.param_groups[0]['weight_decay']
@@ -217,12 +230,18 @@ class Trainer:
                     else:
                         # For standard optimizers, and those requiring just the loss tensor.
                         if not optimizer_tags.get("d_1_step_requires_loss_tensor", False):
+                            print(f"[DEBUG] Manual backward for {self.optimizer.__class__.__name__}")
                             loss_tensor.backward(create_graph=optimizer_tags.get("d_2_requires_second_order", False))
                         
                         if optimizer_tags.get("d_1_step_requires_loss_tensor", False):
                              self.optimizer.step(loss_tensor)
                         else:
                              self.optimizer.step()
+
+                    # 验证梯度是否存在
+                    has_grad = any(p.grad is not None for group in self.optimizer.param_groups for p in group['params'])
+                    if not has_grad:
+                        print(f"[WARNING] No gradient detected after backward for task {task_name}!")
 
                     step_metric = StepMetric(
                         task_name=task_name, global_step=self.context.global_step,

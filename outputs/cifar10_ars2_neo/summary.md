@@ -9,7 +9,7 @@
     ],
     "seed": 42,
     "device": "cuda",
-    "epochs": 10
+    "epochs": 30
   },
   "model": {
     "arch": "resnet18_cifar",
