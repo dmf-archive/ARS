@@ -2,7 +2,6 @@
 tasks = ["cifar10"]
 seed = 42
 device = "cuda"
-epochs = 50
 
 [model]
 arch = "resnet18_cifar"
@@ -17,18 +16,17 @@ n_holes = 1
 cutout_length = 16
 
 [optimizer]
-name = "ARS2-Neo"
+name = "Muon"
 lr = 0.001
-betas = [0.9, 0.999]
-eps = 1e-8
 weight_decay = 5e-4
-ns_steps = 5
-k = 0
+momentum = 0.95
 
 [scheduler]
 name = "cosine"
-T_max = 50
+T_max = 100
 
 [train]
+epochs = 100
 log_every = 10
 ckpt_every = 50
+early_stop_threshold = 99.5

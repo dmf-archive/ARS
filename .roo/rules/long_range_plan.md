@@ -43,11 +43,11 @@
 
 | ID | Config File | Mode | Epochs | Params (ρ/k/α) | 科学目标 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **C-Muon** | `lrp_cifar10_muon_200e.toml` | Muon | 200 | Standard | **Baseline**: 纯几何优化的基准线。 |
-| **C-Base** | `lrp_cifar10_ars2_neo_base_200e.toml` | Base | 200 | k=0 | **Ablation**: 验证能量解耦架构的独立有效性。 |
-| **C-Sync** | `lrp_cifar10_ars2_neo_sync_200e_010.toml` | Sync | 200 | 0.1 / 1 / - | **SOTA**: 冲击 93%+ 精度，对标 AdaFisher/SAM。 |
-| **C-Lazy5** | `lrp_cifar10_ars2_neo_lazy_200e_010_5_010.toml` | Lazy | 200 | 0.1 / 5 / 0.1 | **Efficiency**: 验证 $k=5$ 是最佳甜点位。 |
-| **C-AGA** | `lrp_cifar10_ars2_neo_aga_200e_L10.toml` | AGA | 200 | L=0.10 | **Dynamics**: 验证几何一致性驱动的自动步长。 |
+| **C-Muon** | `lrp_cifar10_muon_100e.toml` | Muon | 200 | Standard | **Baseline**: 纯几何优化的基准线。 |
+| **C-Base** | `lrp_cifar10_ars2_neo_base_100e.toml` | Base | 200 | k=0 | **Ablation**: 验证能量解耦架构的独立有效性。 |
+| **C-Sync** | `lrp_cifar10_ars2_neo_sync_100e_010.toml` | Sync | 200 | 0.1 / 1 / - | **SOTA**: 冲击 93%+ 精度，对标 AdaFisher/SAM。 |
+| **C-Lazy5** | `lrp_cifar10_ars2_neo_lazy_100e_010_5_010.toml` | Lazy | 200 | 0.1 / 5 / 0.1 | **Efficiency**: 验证 $k=5$ 是最佳甜点位。 |
+| **C-AGA** | `lrp_cifar10_ars2_neo_aga_100e_L10.toml` | AGA | 200 | L=0.10 | **Dynamics**: 验证几何一致性驱动的自动步长。 |
 
 ### 3.2 E2: 语言建模的深度泛化 (WikiText-2)
 
@@ -88,7 +88,7 @@
 
 ### Phase 1: Baseline & Anchor (T+2 Days)
 
-- [ ] Run `C-Muon`, `C-Base`, `C-Sync` (200e)
+- [ ] Run `C-Muon`, `C-Base`, `C-Sync` (100e)
 - [ ] Run `W-Base`, `W-Sync` (50e)
 - _Decision_: 若 `Sync > Base`，说明 SAM 有效，进入 ρ-DFS。
 

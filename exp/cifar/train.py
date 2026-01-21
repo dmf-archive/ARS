@@ -103,13 +103,11 @@ def main():
     model = get_model(config["model"]["arch"], num_classes=config["model"]["num_classes"]).to(device)
     criterion = nn.CrossEntropyLoss()
 
-    # 自动分组逻辑由 SmartOptimizer 处理，这里只需提供基础参数
     param_groups = [{'params': model.parameters()}]
     
     opt_cfg = config["optimizer"].copy()
     smart_opt = get_optimizer(opt_cfg.pop("name"), param_groups, model=model, criterion=criterion, device=device, **opt_cfg)
 
-    # Scheduler
     scheduler = None
     if "scheduler" in config:
         sched_cfg = config["scheduler"].copy()
@@ -190,6 +188,10 @@ def main():
         
         if scheduler:
             scheduler.step()
+
+        if val_metrics["accuracy"] >= train_cfg.get("early_stop_threshold", 99.5):
+            print(f"Early stopping at epoch {epoch} as accuracy reached {val_metrics['accuracy']}%")
+            break
             
     broadcast("on_train_end")
 
