@@ -88,7 +88,7 @@ last_updated: "2025-11-16"
 
 1. **AC-001**: 代码通过 `ruff check . --fix` 校验。
 2. **AC-002**: 依赖项管理正确。
-3. **AC-003**: 启动命令格式正确：`python -m exp.<name>` 或 `python -m scripts.train --config <path>`。
+3. **AC-003**: 启动命令格式正确：`python -m exp.<task_name>.train --config <path>`。
 4. **AC-004**: 原子重塑确保 API 对外完全透明。
 
 ## 边缘情况
@@ -98,4 +98,4 @@ last_updated: "2025-11-16"
 ## 新优化器
 
 1. **REQ-EXT-001**: 在 `optimizer/` 目录下创建独立文件（如 `my_optimizer.py`）实现新优化器。
-2. **REQ-EXT-002**: 在 `optimizer/__init__.py` 的 `get_optimizer` 工厂函数中添加 `elif` 分支进行导入与实例化。
+2. **REQ-EXT-002**: 在 `optimizer/__init__.py` 的 `OPTIMIZER_REGISTRY` 中注册新优化器的 `OptimizerMetadata`。
