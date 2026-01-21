@@ -1,8 +1,9 @@
 # ARS2-Neo: Long-Range Dynamics & Spectral Collapse Verification Plan
 
-> **Status**: Draft
+> **Status**: Active (2026-01-21)
 > **Target**: NeurIPS 2026 / ICLR 2027
 > **Focus**: Empirical Verification of Geodesic Optimization & Manifold Flatness
+> **Note**: 本计划已根据 [`training_refactor_plan.md`](.roo/rules/training_refactor_plan.md:1) 完成原子化重构，正式进入长周期实验阶段。
 
 本计划旨在为 **ARS2-Neo** 的论文手稿提供决定性的实验证据。不同于早期的快速验证（Quick Check），本阶段实验关注长周期训练下的动力学行为，旨在验证 **IPWT (整合预测工作空间理论)** 对优化过程的核心预测：**有效的泛化对应于参数流形上的谱熵坍缩与自由能最小化。**
 
@@ -22,91 +23,93 @@
    - _Hypothesis_: 流形曲率的变化率远低于参数更新率，因此剪切力 $v_{flat}$ 可以被复用。
    - _Target_: 证明 $k=5$ 的 Lazy Mode 在计算开销仅增加 ~25% 的情况下，能保持 Sync Mode 95% 的性能。
 
-## 2. 实验矩阵 (Experiment Matrix)
+## 2. 实验设计哲学 (DFS-Binary Search)
 
-所有配置文件遵循命名规范：`ars2_neo_<mode>_<epochs>e_<rho>_<k>_<alpha>.toml`。
+为了在有限算力下最大化信息熵，我们采用 **深度优先二分搜索 (DFS-Binary Search)** 策略：
 
-### 2.1 E1: 视觉任务的收敛极限 (CIFAR-10)
+1. **Baseline Skip**: 已知 Muon 优于 AdamW，故直接以 Muon 为基准线。
+2. **ρ-DFS (Rho Search)**: 在 Sync 模式下寻找最佳扰动半径 ρ。由于几何流形曲率对 ρ 敏感，我们将从锚点出发向两端探测。
+3. **k-DFS (Lazy Efficiency)**: 在确定 ρ_opt 后，固定该参数，通过二分搜索扫描 k 值与注入强度 α 的组合。
+4. **AGA 自动化**: 通过搜索几何一致性阈值 $L$ 实现全自动效率平衡，验证 $k_{eff}$ 是否随训练阶段呈现对数增长。
+
+## 3. 实验矩阵 (Experiment Matrix)
+
+所有配置文件遵循命名规范：`lrp_<task>_ars2_neo_<mode>_<epochs>e_<params>.toml`。
+
+### 3.1 E1: 视觉任务的收敛极限 (CIFAR-10)
 
 > **对应论文章节**: 4.2 Convergence Analysis & 4.5 Scalability
+> **配置基准**: ResNet-18, Batch Size 256.
 
-| ID          | Config File                                 | Mode | Epochs | Params (ρ/k/α) | 科学目标                                               |
-| :---------- | :------------------------------------------ | :--- | :----- | :------------- | :----------------------------------------------------- |
-| **C-Base**  | `cifar10_ars2_neo_base_200e.toml`           | Base | 200    | - / 0 / -      | **Baseline**: 测定纯几何优化的过拟合边界。             |
-| **C-Sync**  | `cifar10_ars2_neo_sync_200e_010.toml`       | Sync | 200    | 0.1 / 1 / -    | **SOTA**: 冲击 93% 精度，对标 AdaFisher/SAM。          |
-| **C-Lazy5** | `cifar10_ars2_neo_lazy_200e_010_5_010.toml` | Lazy | 200    | 0.1 / 5 / 0.1  | **Efficiency**: 验证 $k=5$ 是最佳甜点位 (Sweet Spot)。 |
-| **C-Lazy3** | `cifar10_ars2_neo_lazy_200e_010_3_010.toml` | Lazy | 200    | 0.1 / 3 / 0.1  | **Ablation**: 验证剪切力注入频率对精度的影响。         |
+| ID | Config File | Mode | Epochs | Params (ρ/k/α) | 科学目标 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **C-Muon** | `lrp_cifar10_muon_200e.toml` | Muon | 200 | Standard | **Baseline**: 纯几何优化的基准线。 |
+| **C-Base** | `lrp_cifar10_ars2_neo_base_200e.toml` | Base | 200 | k=0 | **Ablation**: 验证能量解耦架构的独立有效性。 |
+| **C-Sync** | `lrp_cifar10_ars2_neo_sync_200e_010.toml` | Sync | 200 | 0.1 / 1 / - | **SOTA**: 冲击 93%+ 精度，对标 AdaFisher/SAM。 |
+| **C-Lazy5** | `lrp_cifar10_ars2_neo_lazy_200e_010_5_010.toml` | Lazy | 200 | 0.1 / 5 / 0.1 | **Efficiency**: 验证 $k=5$ 是最佳甜点位。 |
+| **C-AGA** | `lrp_cifar10_ars2_neo_aga_200e_L10.toml` | AGA | 200 | L=0.10 | **Dynamics**: 验证几何一致性驱动的自动步长。 |
 
-### 2.2 E2: 语言建模的深度泛化 (WikiText-2)
+### 3.2 E2: 语言建模的深度泛化 (WikiText-2)
 
 > **对应论文章节**: 4.3 Generalization Dynamics & 4.4 Spectral Analysis
+> **配置基准**: Qwen3 (RoPE), Context 255.
 
-| ID         | Config File                                            | Mode | Epochs | Params (ρ/k/α) | 科学目标                                        |
-| :--------- | :----------------------------------------------------- | :--- | :----- | :------------- | :---------------------------------------------- |
-| **W-Base** | `wikitext2_line_rope_ars2_neo_base_50e.toml`           | Base | 50     | - / 0 / -      | **Control**: 记录无平坦度约束下的过拟合曲线。   |
-| **W-Sync** | `wikitext2_line_rope_ars2_neo_sync_50e_010.toml`       | Sync | 50     | 0.1 / 1 / -    | **Dynamics**: 捕捉谱熵坍缩与 PPL 下降的相关性。 |
-| **W-Lazy** | `wikitext2_line_rope_ars2_neo_lazy_50e_010_5_010.toml` | Lazy | 50     | 0.1 / 5 / 0.1  | **Stability**: 验证长周期下的数值稳定性。       |
+| ID | Config File | Mode | Epochs | Params (ρ/k/α) | 科学目标 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **W-Base** | `lrp_wikitext2_ars2_neo_base_50e.toml` | Base | 50 | - / 0 / - | **Control**: 记录无平坦度约束下的过拟合曲线。 |
+| **W-Sync** | `lrp_wikitext2_ars2_neo_sync_50e_010.toml` | Sync | 50 | 0.1 / 1 / - | **Dynamics**: 捕捉谱熵坍缩与 PPL 下降的相关性。 |
+| **W-Lazy** | `lrp_wikitext2_ars2_neo_lazy_50e_010_5_010.toml` | Lazy | 50 | 0.1 / 5 / 0.1 | **Stability**: 验证长周期下的数值稳定性。 |
 
-## 3. 关键监控指标 (Key Metrics)
+### 3.3 E3: Grokking 动力学 (Modular Addition)
 
-为了支持论文中的 "Dynamics Analysis" 章节，我们需要收集以下高分辨率数据：
+> **对应论文章节**: 4.6 Phase Transition Analysis
 
-### 3.1 性能指标 (Performance)
+| ID | Config File | Mode | Epochs | Params | 科学目标 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **G-Sync** | `lrp_grok_ars2_neo_sync_1000e.toml` | Sync | 1000 | ρ=0.1 | 验证平坦度约束对泛化相变的加速效应。 |
+
+## 4. 关键监控指标 (Key Metrics)
+
+### 4.1 性能指标 (Performance)
 
 - **Test Accuracy / PPL**: 标准评估指标。
-
 - **Train-Test Gap**: 量化泛化能力，验证 SAM 机制的有效性。
 
-### 3.2 动力学探针 (Dynamics Probes)
+### 4.2 动力学探针 (Dynamics Probes)
 
 - **Spectral Entropy $H(S)$**:
   $$ H(S) = -\sum p_i \log p_i, \quad p_i = \sigma_i / \sum \sigma_k $$
   _预期_: ARS2-Neo 的 $H(S)$ 应比 AdamW 下降得更快、更低。
-
 - **Update Norm $\| \Delta \theta \|_F$**: 监控能量注入的稳定性。
 - **Effective Rank**: 更新矩阵的有效秩。
+- **Average k (AGA Mode)**: 监控几何一致性随训练阶段的变化。
 
-## 4. 执行路线图 (Execution Roadmap)
+## 5. 执行路线图 (Execution Roadmap)
 
-### Phase 1: Baseline Establishment (T+2 Days)
+### Phase 1: Baseline & Anchor (T+2 Days)
 
-_目标_: 确立 Base 模式的性能下限和过拟合点。
+- [ ] Run `C-Muon`, `C-Base`, `C-Sync` (200e)
+- [ ] Run `W-Base`, `W-Sync` (50e)
+- _Decision_: 若 `Sync > Base`，说明 SAM 有效，进入 ρ-DFS。
 
-- [ ] Run `C-Base` (CIFAR-10 200e)
-- [ ] Run `W-Base` (WikiText-2 50e)
+### Phase 2: ρ-DFS & AGA Dynamics (T+4 Days)
 
-### Phase 2: SOTA Pushing (T+4 Days)
+- [ ] 执行 ρ 探测：`ρ=0.05`, `ρ=0.2`, `ρ=0.5`
+- [ ] Run `C-AGA` 采集 `avg_k` 曲线。
 
-_目标_: 获取论文所需的 "Bold" 数据，证明 ARS2-Neo 的优越性。
+### Phase 3: Efficiency & Grokking (T+6 Days)
 
-- [ ] Run `C-Sync` (CIFAR-10 200e) -> 目标 Acc > 92.5%
-- [ ] Run `W-Sync` (WikiText-2 50e) -> 目标 PPL < 75
-
-### Phase 3: Efficiency Verification (T+6 Days)
-
-_目标_: 验证 Lazy Mode 的工程价值。
-
-- [ ] Run `C-Lazy5` & `C-Lazy3`
-- [ ] Run `W-Lazy`
+- [ ] Run `C-Lazy5`, `W-Lazy`
+- [ ] Run `G-Sync`
 
 ### Phase 4: Data Synthesis & Plotting (T+7 Days)
 
-_目标_: 生成论文插图。
-
-- [ ] 绘制 "Accuracy vs. Wall-clock Time" 曲线 (证明 Lazy Mode 优势)。
-- [ ] 绘制 "Spectral Entropy Evolution" 曲线 (证明理论假设)。
+- [ ] 绘制 "Accuracy vs. Wall-clock Time" 曲线。
+- [ ] 绘制 "Spectral Entropy Evolution" 曲线。
 - [ ] 整理 "Ablation Study" 表格。
 
-## 5. 风险与应对 (Risk Management)
+## 6. 风险与应对 (Risk Management)
 
-1. **数值不稳定性 (Numerical Instability)**:
-   - _Risk_: 长周期训练中，$\|g_{nat}\|$ 可能因方差累积而爆炸。
-   - _Mitigation_: 监控 `grad_norm`，必要时在 `config` 中启用 `grad_clip` 或调整 `trust_region_clip`。
-
-2. **过拟合 (Overfitting)**:
-   - _Risk_: 即便有 SAM，WikiText-2 在 50e 后仍可能过拟合。
-   - _Mitigation_: 实施 Early Stopping，论文中报告 "Best Epoch" 性能，并分析过拟合发生的临界点（这也是有价值的实验结果）。
-
-3. **资源争用**:
-   - _Risk_: 长周期实验占用大量 GPU 时间。
-   - _Mitigation_: 优先运行 `C-Sync` 和 `W-Sync`，这是论文的核心论据。Lazy Mode 实验优先级次之。
+1. **数值不稳定性**: 监控 `grad_norm`，必要时启用 `trust_region_clip`。
+2. **过拟合**: 实施 Early Stopping，报告 "Best Epoch" 性能并分析过拟合临界点。
+3. **资源争用**: 优先运行 `C-Sync` 和 `W-Sync`，这是论文的核心论据。
