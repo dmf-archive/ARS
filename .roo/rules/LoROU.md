@@ -1,4 +1,4 @@
-# LRoU: Low-Rank Orthogonalized Update (猜想)
+# LoROU: Low-Rank Orthogonalized Update (猜想)
 
 > **状态**：[理论猜想与实验计划]
 > **核心命题**：稀疏性可能不是架构的属性，而是**优化动力学**的内生属性。
@@ -16,7 +16,7 @@ Muon 和 SAM 通过最小化更新量中的冗余（正交化）和平坦度约�
 ### 1.3 范式转移
 
 - **旧范式**: 显式稀疏架构 (Sparse Architecture, e.g., MoE) + 稠密优化器。
-- **新范式**: 稠密架构 (Dense Architecture) + 稀疏优化器 (Sparse Optimizer, e.g., RMSuon/LRoU)。
+- **新范式**: 稠密架构 (Dense Architecture) + 稀疏优化器 (Sparse Optimizer, e.g., ARS2-Neo/LoROU)。
 - **对偶性**: 如果 ΔW 本身是低秩的，那么稠密矩阵乘法在功能上等价于稀疏路由。
 
 ## 2. 验证计划：谱熵监控 (Spectral Entropy Monitor)
