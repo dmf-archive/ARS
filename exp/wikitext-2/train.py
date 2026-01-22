@@ -161,8 +161,16 @@ def main():
     def broadcast(event):
         for cb in callbacks: getattr(cb, event)(context)
 
+    resumed = False
+    for cb in callbacks:
+        if isinstance(cb, CheckpointSaver):
+            if cb.load(context):
+                resumed = True
+                break
+    
     broadcast("on_train_begin")
-    for epoch in range(config["experiment"]["epochs"]):
+    start_epoch = context.current_epoch + 1 if resumed else 0
+    for epoch in range(start_epoch, config["experiment"]["epochs"]):
         context.current_epoch, context.current_task_name, context.is_training = epoch, "wikitext2", True
         context.total_steps_in_epoch = len(train_loader)
         model.train()
@@ -187,8 +195,8 @@ def main():
                 gn = compute_grad_norm(model, return_tensor=True)
                 if gn is not None: epoch_grad_norm_list.append(gn)
 
-            store.add_step(StepMetric(task_name="wikitext2", global_step=context.global_step, task_epoch=epoch, 
-                                      step_in_epoch=step, loss=loss.item(), learning_rate=smart_opt.param_groups[0]['lr']))
+            context.store.add_step(StepMetric(task_name="wikitext2", global_step=context.global_step, task_epoch=epoch,
+                                              step_in_epoch=step, loss=loss.item(), learning_rate=smart_opt.param_groups[0]['lr']))
             broadcast("on_step_end")
             context.global_step += 1
 
@@ -213,10 +221,10 @@ def main():
             norms = [p.norm().item() for p in group['params']]
             if norms: diagnostics[f"group_{i}_{name}_avg_norm"] = sum(norms) / len(norms)
 
-        store.add_epoch(EpochMetric(task_name="wikitext2", task_epoch=epoch, global_epoch=epoch, avg_train_loss=avg_train_loss,
-                                    task_metrics=TaskMetrics(metrics=val_metrics), avg_pi_obj=avg_pi, avg_entropy=avg_entropy,
-                                    grad_norm=avg_gn, learning_rate=smart_opt.param_groups[0]['lr'], diagnostics=diagnostics,
-                                    epoch_time_s=time.time() - epoch_start_time, peak_gpu_mem_mb=torch.cuda.max_memory_allocated() / (1024**2) if device.type == 'cuda' else None))
+        context.store.add_epoch(EpochMetric(task_name="wikitext2", task_epoch=epoch, global_epoch=epoch, avg_train_loss=avg_train_loss,
+                                            task_metrics=TaskMetrics(metrics=val_metrics), avg_pi_obj=avg_pi, avg_entropy=avg_entropy,
+                                            grad_norm=avg_gn, learning_rate=smart_opt.param_groups[0]['lr'], diagnostics=diagnostics,
+                                            epoch_time_s=time.time() - epoch_start_time, peak_gpu_mem_mb=torch.cuda.max_memory_allocated() / (1024**2) if device.type == 'cuda' else None))
         broadcast("on_epoch_end")
         broadcast("save")
     broadcast("on_train_end")

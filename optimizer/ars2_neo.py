@@ -68,38 +68,51 @@ def adamw_step_kernel(
 
 class ARS2Neo(Optimizer):
     """
-    ARS2-Neo: Adaptive Riemannian Stiefel Optimization with Neo-SAM。
+    ARS2-Neo: Adaptive Riemannian Stiefel Optimization with Neo-SAM.
     
-    ARS2-Neo is a hybrid optimizer that merges the geometric optimization power of AdaRMSuon with the flatness constraint of GSAM.  
+    ARS2-Neo is a hybrid optimizer that merges the geometric optimization power of AdaRMSuon with the flatness constraint of GSAM.
     
     It attains rapid convergence on Riemannian manifolds via energy–geometry decoupling while leveraging manifold-aware SAM to escape sharp minima.
 
-    The optimizer employs a dual-track design: 2D+ parameters are automatically routed to the ARS2 track (orthogonalized optimization) and 1D parameters to the AdamW track.  
+    The optimizer employs a dual-track design: 2D+ parameters are automatically routed to the ARS2 track (orthogonalized optimization) and 1D parameters to the AdamW track.
     Distributed training (DDP) is supported, and three SAM modes are provided: disabled (k=0), synchronous SAM (k=1), and delayed SAM (k>1).
 
     Args:
-    - params: list of parameter groups; each must contain a 'params' key and an optional 'is_rmsuon_group' flag.  
-    - lr: learning rate, default 1e-3.  
-    - betas: Adam beta tuple (beta1, beta2), default (0.9, 0.999).  
-    - eps: Adam epsilon for numerical stability, default 1e-8.  
-    - weight_decay: weight-decay coefficient, default 0.01.  
-    - ns_steps: Newton–Schulz iteration steps, default 5.  
-    - rho: SAM perturbation radius controlling flatness strength, default 0.1.  
-    - k: SAM mode parameter; k=0 disables SAM, k=1 gives synchronous mode, k>1 gives delayed mode, default 1.  
-    - alpha: shear-force injection strength in delayed mode, default 0.1.  
-    - adaptive: use adaptive perturbation (scaled by param magnitude), default True.
+    - params: list of parameter groups; each must contain a 'params' key and an optional 'is_rmsuon_group' flag.
+    - lr: learning rate, default 1e-3.
+    - betas: Adam beta tuple (beta1, beta2), default (0.9, 0.999).
+    - eps: Adam epsilon for numerical stability, default 1e-8.
+    - weight_decay: weight-decay coefficient, default 0.01.
+    - ns_steps: Newton–Schulz iteration steps, default 5.
+    - rho: SAM perturbation radius controlling flatness strength, default 0.1.
+    - k: SAM mode parameter; k=0 disables SAM, k=1 gives synchronous mode, k>1 gives delayed mode, default 1.
+    - alpha: base shear-force injection strength, default 0.1.
+    - adaptive_sync: enable Adaptive Geometric Awareness (AGA) sync mode, default False.
+    - adaptive_beta: EMA coefficient for tracking geometric noise (variance), default 0.99.
+    - adaptive_lambda: sensitivity for dynamic threshold (L = 1.0 - lambda * std), default 2.0.
+    - adaptive_gamma: exponent for alpha amplification law, default 2.0.
     """
     
     def __init__(self, params, lr: float = 1e-3, betas: tuple[float, float] = (0.9, 0.999),
                  eps: float = 1e-8, weight_decay: float = 0.01, ns_steps: int = 5,
-                 rho: float = 0.1, k: int = 1, alpha: float = 0.1, 
-                 adaptive: bool = True):
+                 rho: float = 0.1, k: int = 1, alpha: float = 0.1,
+                 adaptive_sync: bool = False, adaptive_beta: float = 0.99,
+                 adaptive_lambda: float = 2.0, adaptive_gamma: float = 2.0):
         defaults = dict(
             lr=lr, betas=betas, eps=eps, weight_decay=weight_decay,
-            ns_steps=ns_steps, rho=rho, k=k, alpha=alpha, adaptive=adaptive
+            ns_steps=ns_steps, rho=rho, k=k, alpha=alpha,
+            adaptive_sync=adaptive_sync, adaptive_beta=adaptive_beta,
+            adaptive_lambda=adaptive_lambda, adaptive_gamma=adaptive_gamma
         )
         super().__init__(params, defaults)
         self.state['step'] = 0
+        # AGA Global State
+        self.state['phi_t'] = 1.0
+        self.state['phi_var'] = 0.0
+        self.state['threshold'] = 1.0
+        self.state['alpha_t'] = alpha
+        self.state['sync_steps'] = 0
+        self.state['last_sync_step'] = 0
 
     @torch.no_grad()
     def step(self, closure: Optional[Callable[[], torch.Tensor]] = None) -> Optional[torch.Tensor]:
@@ -110,9 +123,10 @@ class ARS2Neo(Optimizer):
         global_step = self.state['step']
         
         # 1. Determine SAM mode for this step (using first group as reference)
-        k = self.param_groups[0].get('k', 1)
-        is_sam_enabled = k > 0
-        is_sync_step = is_sam_enabled and (global_step % k == 1 if k > 1 else True)
+        group0 = self.param_groups[0]
+        k = group0.get('k', 1)
+        adaptive_sync = group0.get('adaptive_sync', False)
+        is_sam_enabled = k > 0 or adaptive_sync
         
         # 2. First Backward (Base Gradient)
         with torch.enable_grad():
@@ -120,12 +134,53 @@ class ARS2Neo(Optimizer):
             loss.backward()
             
         # 3. SAM Logic (Global across groups)
+        is_sync_step = False
+        
+        if is_sam_enabled:
+            if adaptive_sync:
+                # AGA Mode: Calculate global phi_t and decide sync
+                phi_t = self._calculate_global_phi()
+                self.state['phi_t'] = phi_t
+                
+                # Update EMA for variance (noise) relative to 0.0 (Orthogonal Baseline)
+                beta = group0.get('adaptive_beta', 0.99)
+                diff_sq = phi_t ** 2
+                
+                if global_step == 1:
+                    self.state['phi_var'] = diff_sq
+                else:
+                    # Only update noise estimate when alignment is relatively good
+                    # to avoid noise from the drift itself polluting the threshold
+                    if global_step - self.state.get('last_sync_step', 0) > 1:
+                        self.state['phi_var'] = beta * self.state['phi_var'] + (1 - beta) * diff_sq
+                
+                std = self.state['phi_var'] ** 0.5
+                # Threshold is now centered around 0.0
+                threshold = - group0.get('adaptive_lambda', 2.0) * std
+                self.state['threshold'] = threshold
+                
+                # Sync Decision: Conflict (phi < threshold) OR First Step OR Forced by k
+                steps_since_sync = global_step - self.state.get('last_sync_step', 0)
+                is_drift = phi_t < threshold
+                is_sync_step = is_drift or (global_step == 1) or (k > 1 and steps_since_sync >= k)
+                
+                # Alpha Amplification Law: alpha_t = alpha_max * (1 + max(0, phi_t))^gamma
+                gamma = group0.get('adaptive_gamma', 2.0)
+                alpha_max = group0.get('alpha', 0.1)
+                self.state['alpha_t'] = alpha_max * ((1.0 + max(0.0, phi_t)) ** gamma)
+                
+            else:
+                # Classic Mode
+                is_sync_step = (global_step % k == 1 if k > 1 else True)
+                self.state['alpha_t'] = group0.get('alpha', 0.1)
+
         if is_sam_enabled and is_sync_step:
+            self.state['last_sync_step'] = global_step
+            self.state['sync_steps'] += 1
             # Perturb
             for group in self.param_groups:
                 rho = group.get('rho', 0.1)
                 if rho <= 0: continue
-                adaptive = group.get('adaptive', True)
                 eps = group.get('eps', 1e-8)
                 beta2 = group.get('betas', (0.9, 0.999))[1]
                 
@@ -137,7 +192,10 @@ class ARS2Neo(Optimizer):
                     
                     v_hat = state['exp_avg_sq'] / (1 - beta2 ** max(1, global_step - 1) + 1e-12)
                     g_nat = p.grad / (v_hat.sqrt() + eps)
-                    if adaptive: g_nat = g_nat * p.abs()
+                    
+                    # ASAM: Adaptive Scale Awareness (Always Enabled)
+                    g_nat = g_nat * p.abs()
+                    
                     norm = g_nat.norm() + 1e-12
                     perturb = g_nat * (rho / norm)
                     
@@ -160,16 +218,18 @@ class ARS2Neo(Optimizer):
                     state = self.state[p]
                     p.sub_(state['last_perturbation'])
                     
-                    if k > 1:
+                    # Update shear force if we are in a mode that reuses it (Lazy or AGA)
+                    if k > 1 or adaptive_sync:
                         g_base = state['base_grad']
                         g_adv = p.grad
                         dot = (g_adv * g_base).sum()
                         base_norm_sq = (g_base * g_base).sum() + 1e-12
                         state['shear_force'] = g_adv - (dot / base_norm_sq) * g_base
+                        
         elif is_sam_enabled and not is_sync_step:
-            # Lazy SAM: Inject shear force
+            # Lazy/AGA SAM: Inject shear force
+            current_alpha = self.state.get('alpha_t', 0.1)
             for group in self.param_groups:
-                alpha = group.get('alpha', 0.1)
                 for p in group['params']:
                     if p.grad is None: continue
                     state = self.state[p]
@@ -177,7 +237,7 @@ class ARS2Neo(Optimizer):
                         v = state['shear_force']
                         g_norm = p.grad.norm()
                         v_norm = v.norm() + 1e-12
-                        p.grad.add_(v, alpha=alpha * (g_norm / v_norm))
+                        p.grad.add_(v, alpha=current_alpha * (g_norm / v_norm))
                         
         # 4. Final Updates
         for group in self.param_groups:
@@ -211,6 +271,47 @@ class ARS2Neo(Optimizer):
         else:
             for p in params:
                 self._apply_ars2_kernel(p, beta1, beta2, lr, eps, weight_decay, ns_steps)
+
+    def _calculate_global_phi(self) -> float:
+        """Calculate global geometric interference factor phi_t, supporting DDP."""
+        num = 0.0
+        den_g = 0.0
+        den_v = 0.0
+        
+        for group in self.param_groups:
+            for p in group['params']:
+                if p.grad is None: continue
+                state = self.state[p]
+                if 'shear_force' not in state: continue
+                
+                g = p.grad
+                v = state['shear_force']
+                
+                num += (g * v).sum().item()
+                den_g += (g * g).sum().item()
+                den_v += (v * v).sum().item()
+        
+        # DDP Support (Placeholder for future expansion)
+        if dist.is_available() and dist.is_initialized():
+            device = self.param_groups[0]['params'][0].device
+            t = torch.tensor([num, den_g, den_v], device=device)
+            dist.all_reduce(t, op=dist.ReduceOp.SUM)
+            num, den_g, den_v = t.tolist()
+            
+        phi = num / ((den_g * den_v) ** 0.5 + 1e-12)
+        return float(phi)
+
+    @property
+    def diagnostics(self) -> dict:
+        total_steps = self.state.get('step', 1)
+        sync_steps = self.state.get('sync_steps', 0)
+        return {
+            'phi_t': self.state.get('phi_t', 1.0),
+            'phi_std': self.state.get('phi_var', 0.0) ** 0.5,
+            'threshold': self.state.get('threshold', 0.0),
+            'alpha_t': self.state.get('alpha_t', 0.1),
+            'effective_k': total_steps / max(1, sync_steps)
+        }
 
     def _apply_ars2_kernel(self, p, beta1, beta2, lr, eps, weight_decay, ns_steps):
         if p.grad is None: return
@@ -274,9 +375,9 @@ class ARS2Neo(Optimizer):
 
 class SingleDeviceARS2Neo(ARS2Neo):
     """
-    单设备版本的 ARS2-Neo 优化器。
+    Single-device version of ARS2-Neo optimizer.
     
-    该变体专为非分布式训练环境设计，移除了 DDP 相关的同步逻辑。
+    This variant is designed for non-distributed training environments and removes DDP-related synchronization logic.
     """
     def _ars2_update(self, group: dict, global_step: int):
         beta1, beta2 = group['betas']

@@ -35,6 +35,7 @@ class CheckpointSaver(Callback):
     def save(self, context: "TrainerContext"):
         checkpoint = {
             "epoch": context.current_epoch,
+            "global_step": context.global_step,
             "model_state_dict": context.model.state_dict(),
             "optimizer_state_dict": context.optimizer.state_dict(),
             "scheduler_state_dict": context.scheduler.state_dict() if context.scheduler else None,
@@ -67,5 +68,6 @@ class CheckpointSaver(Callback):
 
         context.store = checkpoint["store"]
         context.current_epoch = checkpoint["epoch"]
+        context.global_step = checkpoint.get("global_step", 0)
 
         return True

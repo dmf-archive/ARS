@@ -1,0 +1,37 @@
+[experiment]
+name = "test_aga_smoke"
+device = "cuda"
+seed = 42
+tasks = ["cifar10"]
+
+[data]
+batch_size = 256
+num_workers = 0 # Avoid multiprocessing issues in quick test
+cutout = false
+
+[model]
+arch = "resnet18"
+num_classes = 10
+
+[train]
+epochs = 1
+
+[optimizer]
+name = "ARS2-Neo"
+lr = 1e-3
+weight_decay = 0.05
+betas = [0.9, 0.95]
+eps = 1e-8
+ns_steps = 5
+rho = 0.1
+k = 5
+alpha = 0.1
+adaptive_sync = true
+adaptive_beta = 0.9
+adaptive_lambda = 0.1 # Low lambda to trigger sync frequently for testing
+adaptive_gamma = 2.0
+
+[scheduler]
+name = "cosine"
+T_max = 1
+eta_min = 1e-5

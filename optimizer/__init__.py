@@ -82,7 +82,15 @@ OPTIMIZER_REGISTRY: dict[str, OptimizerMetadata] = {
         cls_name="SingleDeviceARS2Neo", module_name="ars2_neo",
         grouping=GroupingStrategy.RMSUON, expects_param_groups=True,
         capabilities=Capability.REQUIRES_CLOSURE | Capability.BN_PROTECTION,
-        extra_config_keys=["betas", "eps", "rho", "k", "alpha", "adaptive", "ns_steps"]
+        extra_config_keys=[
+            "betas", "eps", "rho", "k", "alpha", "ns_steps",
+            "adaptive_sync", "adaptive_beta", "adaptive_lambda", "adaptive_gamma"
+        ]
+    ),
+    "AdaMuon": OptimizerMetadata(
+        cls_name="AdaMuon", module_name="adamuon",
+        grouping=GroupingStrategy.MUON, expects_param_groups=True,
+        extra_config_keys=["betas", "eps", "ns_steps"]
     ),
 }
 
