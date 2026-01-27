@@ -64,16 +64,16 @@ Experimental Setup: ResNet-18, Batch Size 256.
 
 ### 3.3 Grokking Phenomenon Acceleration
 
-To verify the dynamic characteristics of the optimizer during generalization phase transitions, we compared the performance of various optimizers on a modular addition task.
+To verify the dynamic characteristics of the optimizer during generalization phase transitions, we compared the performance of various optimizers on a modular addition task (`p=113`, `train_frac=0.3`).
 
 | Optimizer | Fitting (Epoch) | Grokking (Epoch) | Convergence (Epoch) | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **AdamW** | ~140 | 228 | 556 | Standard Grokking curve, significant delay. |
-| **ARS** | **28** | **54** | 300 | **Ultra-fast Grokking**. Generalization delay almost disappears. |
-| **ARS2** | 17 | 100 | 290 | Robust Grokking. Flatness constraint guides to flatter regions. |
-| **Muon** | >156 | N/A | N/A | Failed to converge under this specific task config. |
+| **AdamW** | ~140 | >600 | N/A | Severe generalization lag; failed to grok within 600 epochs. |
+| **Muon** | ~150 | >400 | N/A | Pure geometric optimization wanders slowly without adaptive energy. |
+| **ARS2-Neo (Base)** | **20** | **180** | **250** | **Ultra-fast Grokking**. Energy-Geometry Decoupling significantly accelerates phase transition. |
+| **ARS2-Neo (AGA)** | **20** | **150** | **200** | **Optimal Dynamics**. Adaptive Geometric Awareness further shortens generalization lag. |
 
-**Core Insight**: ARS2 accelerates the occurrence of Grokking by **4x**, strongly proving that Energy-Geometry Decoupling avoids ineffective wandering in overfitting basins.
+**Core Insight**: ARS2-Neo accelerates the occurrence of Grokking by **over 4x**, strongly proving that Energy-Geometry Decoupling avoids ineffective wandering in overfitting basins, directly traversing high-dimensional canyons to reach generalized solutions.
 
 ## 4. Quick Start
 

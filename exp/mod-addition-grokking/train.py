@@ -171,6 +171,10 @@ def main():
         
         broadcast("on_epoch_end")
         broadcast("save")
+        if val_metrics["accuracy"] >= 99.5:
+            print(f"Early stopping at epoch {epoch} as test accuracy reached {val_metrics['accuracy']:.2f}%")
+            break
+
 
     broadcast("on_train_end")
 
