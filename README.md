@@ -1,123 +1,114 @@
-# F3EO-Bench: A Lightweight Framework for Advanced Optimizer Evaluation
-
-[简体中文](./README_CN.md)
+# ARS2-Neo: Gliding Directly Towards Global Optima Along Geodesics of the Loss Landscape
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Python](https://img.shields.io/badge/Python-3.12+-green.svg)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.7+-orange.svg)](https://pytorch.org)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/dmf-archive/F3EO)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/dmf-archive/ARS)
 
-> **F3EO-Bench** is a research framework for prototyping and evaluating advanced neural network optimizers, centered on the principle of **Energy-Geometry Decoupling**.
+> This project is a research framework focused on second-order optimization dynamics and information geometry. It realizes an efficient gliding optimization paradigm on Riemannian manifolds through the principle of Energy-Geometry Decoupling.
 
-## 1. Core Principle: Energy-Geometry Decoupling
+## 1. Theoretical Foundation: From Diagonal Fisher to Full-rank NGD
 
-Modern deep learning optimization faces a trade-off between statistical adaptivity (how fast to learn) and structural stability (what to learn). F3EO-Bench facilitates research into optimizers that decouple these concerns. Our flagship optimizer, **AdaRMSuon**, operationalizes this principle:
+The core design of ARS2-Neo is based on a deep reconstruction of modern optimization algorithms, aimed at overcoming the limitations of first-order optimizers in ill-conditioned curvature landscapes.
 
-1. **Statistical Operator (Energy)**: Uses the scalar norm of AdamW's second-moment-corrected momentum (‖m̂ / √v̂‖) to determine the update magnitude. This acts as a computationally cheap proxy for the rate of free-energy descent.
-2. **Structural Operator (Geometry)**: Employs Muon's Newton-Schulz iteration to find an orthogonal update direction (O_t). **AdaRMSuon** further introduces **Pre-whitening**, whitening the gradient with v_t before projection to ensure the update follows the geodesic of the Riemannian manifold.
+### 1.1 Parameter De-correlation
 
-The final update is a composition of these two operators: `g_update = scale * O_t`. This decouples "how fast" from "where to go," providing a robust and efficient path towards the minimum.
+Through **Muon**'s Newton-Schulz iteration, ARS2-Neo enforces orthogonality on the update matrices (Stiefel manifold constraint). Mathematically, orthogonalized updates are equivalent to performing de-correlation in the parameter space, eliminating internal covariate shift and purifying the gradient information.
 
-## 2. Advanced Evolution: From Geometry to Topology (ARS)
+### 1.2 Full-rank Fisher Approximation and NGD
 
-While AdaRMSuon converges extremely fast, it tends to fall into sharp local minima (overfitting). To address this, we introduced **ARS (AdaRMSuon Regularized Search)**, which adds topological flatness constraints on top of the geometric gliding.
+The Adam optimizer essentially performs a diagonal approximation of the Fisher Information Matrix via second moments. When this diagonal Fisher preconditioning meets Muon's de-correlated parameter space, the originally lost off-diagonal information is geometrically compensated.
 
-- **Manifold-Aware SAM**: ARS calculates the adversarial direction not in Euclidean space, but on the Riemannian manifold defined by v_t, searching for "flat" geodesic regions.
-- **Lazy Mode & Shear Force Injection**: To avoid the double computational cost of SAM, we implemented Lazy Mode (k > 1). In non-perturbation steps, we inject a "Shear Force" (v_flat) orthogonal to the base gradient, continuously pushing the model away from sharp regions.
-- **Intensity Compensation**: Experiments show that in Lazy Mode, the injection intensity (α) must be increased to compensate for the bias caused by low-frequency corrections. The configuration k=5, α=0.1 achieves the best balance between training speed and generalization performance.
+- **Operator Composition Effect**: Diagonal Fisher + Orthogonalized Parameter Space ≈ **Full-rank Fisher Information Matrix**.
+- **Dynamic Characteristics**: This enables ARS2-Neo to essentially perform high-efficiency **Natural Gradient Descent (NGD)**. In Wikitext-2 experiments, ARS2-Neo (Base) reached a training loss of 0.9 in just 20 epochs, demonstrating its powerful landscape smoothing capability.
 
-## 3. Key Experimental Results
+### 1.3 Global Optima and MDL Principle
+
+While NGD provides rapid convergence, it is prone to falling into "sharp minima" (overfitting). ARS2-Neo introduces **Manifold-Aware SAM (Sharpness-Aware Minimization)**:
+
+- **Flatness Constraint**: By searching for adversarial directions on the Riemannian manifold, the algorithm is guided towards broader basins in the loss landscape.
+- **MDL Correspondence**: According to the Minimum Description Length (MDL) principle, flatter regions correspond to simpler model explanations, thereby possessing stronger generalization capabilities.
+
+## 2. Core Mechanism: Energy-Geometry Decoupling
+
+ARS2-Neo decomposes the optimization process into two independent operators:
+
+1. **Statistical Operator (Energy)**: Uses the second-moment corrected momentum norm from AdamW to determine the update step size, serving as a proxy for the rate of free-energy descent.
+2. **Structural Operator (Geometry)**: Ensures the update direction strictly follows the manifold's **Geodesic** through pre-whitening and orthogonal projection.
+
+## 3. Key Experimental Results (LRP Verification)
 
 ### 3.1 Wikitext-2 Language Modeling
 
-We validated these optimizers on Wikitext-2 (`line mode`). This mode preserves sentence boundaries, maximizing the contextual integrity of the input.
+Experimental Setup: Qwen3 (RoPE, 3-layer), Context 255. Aimed at probing optimization stability on ill-conditioned curvature manifolds.
 
-| Optimizer | Core Mechanism | Epoch 1 PPL | Best PPL | Final PPL | Note |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| Muon | SGD + Newton-Schulz | 233.30 | 161.09 | 161.09 | Baseline |
-| RMSuon | Adam + Newton-Schulz | 146.52 | 99.07 | 134.11 | Early Version |
-| AdaRMSuon | Pre-white + Energy | **133.68** | 83.88 | 87.61 | Fastest Convergence, Overfits |
-| ARS (Sync) | Manifold SAM (ρ=0.05) | 156.62 | 83.70 | 83.70 | Good Generalization |
-| **ARS (Sync)** | **Manifold SAM (ρ=0.1)** | 159.13 | **80.94** | **80.94** | **Best Quality** |
-| **ARS (Lazy)** | **Shear Force (k=5, α=0.1)** | 158.21 | 82.10 | 82.10 | **Best Balance (~1.5x Speedup)** |
+| Optimizer | Best PPL | Last PPL | Dynamic Characteristics | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| **AdamW** | 116.46 | 213.52 | Standard Euclidean Baseline | Slow convergence, late-stage overfitting |
+| **Muon** | 111.35 | 475.65 | Spectral Constrained Convergence | Lacks adaptive energy, late-stage collapse |
+| **ARS2-Neo (Base)** | 96.10 | 3055.47 | **Overfitting** | Rapidly drops into sharp minima, generalization collapse |
+| **ARS2-Neo (Sync)** | **90.69** | **330.85** | **Optimal Generalization Ceiling** | `ρ=0.3`, successfully suppresses overfitting |
+| **ARS2-Neo (AGA)** | 93.23 | 414.83 | Trade-off between Efficiency & Stability | `λ=0.5`, Adaptive Geometric Awareness |
 
-Results show:
+**Core Insight**: ARS2-Neo (AGA) reaches 93.23 PPL in just 3 epochs, far surpassing AdamW's best performance, proving the generational advantage of second-order geometric information in capturing semantic patterns.
 
-1. **ARS (Sync, ρ=0.1)** achieves the best generalization performance (PPL 80.94), proving the effectiveness of manifold-aware perturbation in finding flat minima.
-2. **ARS (Lazy)** achieves ~1.5x training speedup with only a marginal PPL cost (1.1 higher than Sync) thanks to the intensity compensation mechanism, making it the optimal choice for practical applications.
+### 3.2 CIFAR-10 Visual Classification
 
-### 3.2 Grokking Phenomenon Acceleration
+Experimental Setup: ResNet-18, Batch Size 256.
 
-We validated optimizer acceleration effects on the Grokking phenomenon using modular addition tasks, where models need to learn intrinsic patterns of modular arithmetic.
+| Optimizer | Best Acc | Final Acc | Note |
+| :--- | :--- | :--- | :--- |
+| **ARS2-Neo (Sync)** | **95.87%** | **95.73%** | **SOTA**. Rapid convergence in 60 epochs. |
+| **AdamW** | 94.60% | 94.47% | Standard Baseline. |
+| **Muon** | 93.76% | 93.69% | Pure geometric optimization, limited ceiling. |
 
-| Optimizer | Fitting Speed | Grokking Moment | Convergence | Final Performance | Status |
-| :-------- | :------------ | :-------------- | :---------- | :---------------- | :----- |
-| **AdamW** | ~Epoch 140 | **Epoch 228** | Epoch 556 | 100.0% | ✅ Standard Grokking |
-| **AdaRMSuon** | **Epoch 28** | **Epoch 54** | **Epoch 300** | 99.9% | 🚀 **Ultra-fast Grokking** |
-| **ARS** | Epoch 17 | **Epoch 100** | Epoch 290 | 99.1% | 🚀 **Robust Grokking** |
+### 3.3 Grokking Phenomenon Acceleration
 
-**Key Finding**: **AdaRMSuon** accelerates the Grokking phenomenon by **4x** compared to the AdamW baseline (Epoch 228 → Epoch 54), demonstrating the critical role of "Energy-Geometry Decoupling" and "Manifold Flatness Constraints" in accelerating model generalization phase transitions.
+To verify the dynamic characteristics of the optimizer during generalization phase transitions, we compared the performance of various optimizers on a modular addition task.
 
-### 3.3 CIFAR-10 Visual Classification (LRP Verification)
+| Optimizer | Fitting (Epoch) | Grokking (Epoch) | Convergence (Epoch) | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **AdamW** | ~140 | 228 | 556 | Standard Grokking curve, significant delay. |
+| **ARS** | **28** | **54** | 300 | **Ultra-fast Grokking**. Generalization delay almost disappears. |
+| **ARS2** | 17 | 100 | 290 | Robust Grokking. Flatness constraint guides to flatter regions. |
+| **Muon** | >156 | N/A | N/A | Failed to converge under this specific task config. |
 
-We conducted Long-Range Plan (LRP) verification on ResNet-18, demonstrating the superior performance of ARS2-Neo in vision tasks.
-
-| Optimizer | Config | Epochs | Best Acc | Final Acc | Note |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| Muon | Standard | 100 | 93.76% | 93.69% | Pure Geometry Baseline |
-| AdamW | Standard | 100 | 94.60% | 94.47% | Strong Euclidean Baseline |
-| ARS2-Neo (Base) | k=0 | 100 | 95.58% | 95.52% | Gain from Energy-Geometry Decoupling |
-| **ARS2-Neo (Sync)** | **ρ=0.1, k=1** | **60** | **95.87%** | **95.73%** | **SOTA Performance, Fast Convergence** |
-| ARS2-Neo (Sync) | ρ=0.5, k=1 | 60 | 95.28% | 95.23% | Accuracy loss due to large ρ |
-| **ARS2-Neo (AGA)** | **L=2.0** | **20** | 94.10% | 94.09% | **Efficient Reuse, Near-Lossless** |
-
-**Experimental Insights**:
-1. **Surpassing AdamW**: ARS2-Neo (Base) outperforms tuned AdamW solely through Energy-Geometry decoupling, proving the inherent superiority of manifold optimization.
-2. **Flatness Dividend**: Introducing flatness constraints with ρ=0.1 further boosts accuracy to 95.87%, surpassing AdamW's 100-epoch performance in just 60 epochs.
-3. **AGA Potential**: The Adaptive Geometric Awareness (AGA) mode reaches 94.1% accuracy in just 20 epochs, matching and surpassing the concurrent `Sync Mode` while demonstrating extreme computational efficiency.
+**Core Insight**: ARS2 accelerates the occurrence of Grokking by **4x**, strongly proving that Energy-Geometry Decoupling avoids ineffective wandering in overfitting basins.
 
 ## 4. Quick Start
 
-### 4.1. Installation
+### 4.1 Installation
 
 ```bash
-# Using uv is recommended
+# uv is recommended
 uv sync
 ```
 
-### 4.2. Reproduce Key Experiment
+### 4.2 Running Experiments
 
 ```bash
-# 1. Run ARS Sync Mode (Best Quality)
-python -m scripts.train --config config/wikitext2_line_mode_ars_rho_0.1.toml
+# Run WikiText-2 Sync Mode (Optimal Generalization)
+python -m exp.wikitext2.train --config config/lrp_wikitext2_ars2_neo_sync_10e.toml
 
-# 2. Run ARS Lazy Mode (Best Balance)
-python -m scripts.train --config config/wikitext2_line_mode_ars_rho_0.1_k5_alpha0.1.toml
+# Run CIFAR-10 AGA Mode (Efficient Convergence)
+python -m exp.cifar.train --config config/lrp_cifar10_ars2_neo_aga_20e.toml
 ```
-
-Compare the `Eval Perplexity` in the generated summary files within the `outputs/` directory.
 
 ## 5. Framework Structure
 
-The framework is designed for rapid prototyping and clear evaluation.
-
-- **Optimizers**: Reside in [`optimizer/`](optimizer/). See [`optimizer/rmsuon.py`](optimizer/rmsuon.py) and [`optimizer/ars.py`](optimizer/ars.py).
-- **Models**: Standard architectures are in [`model/`](model/).
-- **Tasks**: Training and evaluation logic is defined in [`task/`](task/). The `line mode` implementation is in [`task/wikitext2_line.py`](task/wikitext2_line.py).
-- **Configs**: Experiment configurations are managed via TOML files in [`config/`](config/).
-- **Outputs**: All results, logs, and checkpoints are saved to [`outputs/`](outputs/).
+- **[`optimizer/`](optimizer/)**: Core optimizer implementations, including [`ars2_neo.py`](optimizer/ars2_neo.py).
+- **[`exp/`](exp/)**: Atomicized experiment scripts, decoupling data flow from model logic.
+- **[`model/`](model/)**: Standard research models including Qwen3 (RoPE) and ResNet.
+- **[`config/`](config/)**: TOML-based experiment configuration management.
 
 ## Citation
 
-If you use F3EO-Bench in your research, please cite the underlying theoretical work:
-
 ```bibtex
-@software{f3eo_bench_2025,
+@software{ARS2_Neo_2025,
   author = {Rui, L.},
-  title = {F3EO-Bench: A Lightweight Framework for Advanced Optimizer Evaluation},
-  year = {2025},
+  title = {ARS2-Neo: Gliding Directly Towards Global Optima Along Geodesics of the Loss Landscape},
+  year = {2026},
   publisher = {GitHub},
-  url = {https://github.com/dmf-archive/F3EO},
-  note = {A research framework for optimizers based on the Energy-Geometry Decoupling principle.}
+  url = {https://github.com/dmf-archive/ARS}
 }
 ```

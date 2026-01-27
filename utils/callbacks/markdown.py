@@ -106,7 +106,7 @@ class MDLogger(Callback):
         final_metrics_summary = self._get_final_metrics_summary(epoch_data, task_names)
         best_metric_summary = self._get_best_metric_summary(epoch_data, task_names, sorted_metric_keys)
 
-        report = f"""# F3EO-Bench Experiment Report
+        report = f"""# ARS-Bench Experiment Report
 
 ## Configuration Summary
 ```json

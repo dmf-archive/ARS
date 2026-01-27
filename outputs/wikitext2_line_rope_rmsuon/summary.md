@@ -1,4 +1,4 @@
-# F3EO-Bench Experiment Report
+# ARS-Bench Experiment Report
 
 ## Configuration Summary
 ```json

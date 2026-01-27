@@ -176,7 +176,7 @@ wheels = [
 ]
 
 [[package]]
-name = "f3eo"
+name = "ARS"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

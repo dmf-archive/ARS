@@ -117,7 +117,7 @@ AGA 的收敛性介于 ARS (Lower Bound) 和 ARS2 (Upper Bound) 之间。
 
 ## 4. 实验验证：LRP 正式实验报告
 
-我们基于 F3EO-Bench 进行了长周期 (Long-Range Plan) 实验，以验证 ARS2-Neo 在收敛极限和泛化能力上的表现。
+我们基于 ARS-Bench 进行了长周期 (Long-Range Plan) 实验，以验证 ARS2-Neo 在收敛极限和泛化能力上的表现。
 
 ### 4.1 CIFAR-10：收敛极限与效率
 

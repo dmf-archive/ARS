@@ -38,7 +38,7 @@ class ConsoleLogger(Callback):
             f"[bold cyan]Epochs:[/bold cyan] {context.total_epochs}\n"
             f"[bold cyan]Device:[/bold cyan] {context.device}\n"
             f"[bold cyan]Output:[/bold cyan] {context.output_dir}",
-            title="[bold]F3EO-Bench Training[/bold]",
+            title="[bold]ARS-Bench Training[/bold]",
             border_style="cyan"
         ))
         self.progress = Progress(

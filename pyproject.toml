@@ -1,8 +1,8 @@
 [project]
-name = "f3eo"
+name = "ARS"
 version = "0.1.0"
 authors = [{ name = "Rui.Lin", email = "Lin.Rui.ipwt@proton.me" }]
-description = "F3EO-Bench: The world first third-order optimizer benchmark framework"
+description = "ARS-Bench: The world first third-order optimizer benchmark framework"
 readme = "README.md"
 requires-python = ">=3.12, <3.13"
 license = { text = "AGPL-3.0-or-later" }
@@ -27,11 +27,11 @@ norecursedirs = ["ref", ".venv"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["f3eo*", "scripts*", "optimizer*", "model*", "task*", "config*"]
+include = ["ARS*", "scripts*", "optimizer*", "model*", "task*", "config*"]
 
 [project.urls]
-"Homepage" = "https://github.com/dmf-archive/F3EO-Bench"
-"Bug Tracker" = "https://github.com/dmf-archive/F3EO-Bench/issues"
+"Homepage" = "https://github.com/dmf-archive/ARS-Bench"
+"Bug Tracker" = "https://github.com/dmf-archive/ARS-Bench/issues"
 
 [dependency-groups]
 dev = [
