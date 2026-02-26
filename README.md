@@ -17,10 +17,9 @@ Through **Muon**'s Newton-Schulz iteration, ARS2-Neo enforces orthogonality on t
 
 ### 1.2 Full-rank Fisher Approximation and NGD
 
-The Adam optimizer essentially performs a diagonal approximation of the Fisher Information Matrix via second moments. When this diagonal Fisher preconditioning meets Muon's de-correlated parameter space, the originally lost off-diagonal information is geometrically compensated.
+For any orthogonal matrix `R` and diagonal matrix `D`, the lifted product `RDR^T` is a full-rank matrix whose spectrum lives in the rotated coordinates—this identity holds regardless of where the curvature comes from. Adam is often interpreted as a diagonal preconditioner built from gradient second moments, and ARS2-Neo composes that diagonal scaling with a matrix-level orthogonalization step reminiscent of a polar-factor mixing. If the mixing basis `R` drifts slowly and stays correlated with a curvature eigenbasis while the diagonal `D` tracks the corresponding spectrum, then `RDR^T` can be viewed as a structured natural-gradient preconditioner in the original coordinates, which mirrors the intuition behind Amari (1998) and practical approximations such as K-FAC and Shampoo.
 
-- **Operator Composition Effect**: Diagonal Fisher + Orthogonalized Parameter Space ≈ **Full-rank Fisher Information Matrix**.
-- **Dynamic Characteristics**: This enables ARS2-Neo to essentially perform high-efficiency **Natural Gradient Descent (NGD)**. In Wikitext-2 experiments, ARS2-Neo (Base) reached a training loss of 0.9 in just 20 epochs, demonstrating its powerful landscape smoothing capability.
+This is best phrased as an empirically testable hypothesis rather than a mathematical identity: when ARS2-Neo maintains the required alignment, the composite operator can resemble **Natural Gradient Descent (NGD)** and our Wikitext-2 run (training loss ≈ 0.9 by 20 epochs) is consistent with strong preconditioned descent. If, instead, the orthogonalization merely reshapes singular values without grounding in curvature statistics, the lifted `RDR^T` loses its connection to the true Fisher/Hessian and the NGD analogy weakens.
 
 ### 1.3 Global Optima and MDL Principle
 
