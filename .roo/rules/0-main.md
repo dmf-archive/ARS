@@ -33,7 +33,7 @@ last_updated: "2025-11-16"
 1. REQ-001: 代码须实现高度自解释，严禁包含任何注释与 Docstring。
 2. CON-002: 必须彻底移除代码库中现有的所有注释。
 3. GUD-003: 采用文档与规范驱动开发（如 `.roo/rules`）。
-4. REQ-004: 完整类型标注，通过 `ruff check . --fix` 校验（`mypy .` 可选）。
+4. REQ-004: 完整类型标注，通过 `ruff check . --fix` 与 `ty check --exclude "ref/" --exclude ".venv/" .` 校验。
 5. REQ-005: 纯函数设计，零副作用，优先采用 PyTorch 张量并行。
 6. REQ-006: 文档公式使用 `unicode math`，禁止使用 LaTeX 块。
 7. REQ-007: 显式定义所有参数，固定随机种子以保证可复现性。
@@ -67,7 +67,7 @@ REQ-001-EX: `optimizer/ars2_neo.py` 是唯一获准包含 Docstring 的源代码
 1. REQ-001: **原子重塑** - 识别关键依赖链路边界，重构内部实现，确保对外 API 完全兼容。
 2. SOP-002: 文件存疑时使用 PowerShell 命令（如 `ls`）验证。
 3. SOP-003: 关键操作连续失败三次须暂停并征询意见。
-4. SOP-004: 每 10 次文件编辑后运行 `ruff check . --fix; mypy .` 并更新 `process.md`。
+4. SOP-004: 每 10 次文件编辑后运行 `ruff check . --fix; ty check --exclude "ref/" --exclude ".venv/" .` 并更新 `process.md`。
 5. SOP-005: 任务完成前禁止调用 `attempt_completion`，必须满足：
    - 所有代码通过静态检查。
    - `pyproject.toml` 依赖配置正确。

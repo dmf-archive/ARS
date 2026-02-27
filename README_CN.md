@@ -87,11 +87,17 @@ uv sync
 
 ```bash
 # 运行 WikiText-2 同步模式 (最优泛化)
-python -m exp.wikitext2.train --config config/lrp_wikitext2_ars2_neo_sync_10e.toml
+# 注意：实验目录为 `exp/wikitext-2`，因此使用脚本路径启动。
+python exp/wikitext-2/train.py --config config/lrp_wikitext2_ars2_neo_sync_10e.toml
 
 # 运行 CIFAR-10 AGA 模式 (高效收敛)
 python -m exp.cifar.train --config config/lrp_cifar10_ars2_neo_aga_20e.toml
 ```
+
+### 4.3 结果分层与解释口径
+
+- **LRP/Main 实验**：目录名为 `outputs/lrp_*`，用于主要对比结论。
+- **Verify/Smoke 实验**：目录名为 `outputs/verify_*`，主要用于短程连通性验证（通常 1 epoch），不与长程 LRP 结果直接对比。
 
 ## 5. 框架结构
 

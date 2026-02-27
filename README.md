@@ -87,11 +87,17 @@ uv sync
 
 ```bash
 # Run WikiText-2 Sync Mode (Optimal Generalization)
-python -m exp.wikitext2.train --config config/lrp_wikitext2_ars2_neo_sync_10e.toml
+# Note: the experiment directory is `exp/wikitext-2`, so use script path invocation.
+python exp/wikitext-2/train.py --config config/lrp_wikitext2_ars2_neo_sync_10e.toml
 
 # Run CIFAR-10 AGA Mode (Efficient Convergence)
 python -m exp.cifar.train --config config/lrp_cifar10_ars2_neo_aga_20e.toml
 ```
+
+### 4.3 Result Tiers and Interpretation
+
+- **LRP/Main experiments**: directories named `outputs/lrp_*` are the main comparative results used in claims.
+- **Verify/Smoke experiments**: directories named `outputs/verify_*` are short sanity checks (often 1 epoch) and are not comparable to long-run LRP outcomes.
 
 ## 5. Framework Structure
 
