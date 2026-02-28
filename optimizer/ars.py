@@ -1,6 +1,9 @@
 import torch
 from torch.optim.optimizer import Optimizer
+from typing import Optional, Callable
+
 from .ada_rmsuon import zeropower_via_newtonschulz5
+
 
 class ARSOptimizer(Optimizer):
     def __init__(self, params, **kwargs):
@@ -20,7 +23,7 @@ class ARSOptimizer(Optimizer):
                 defaults[k] = v
         super().__init__(params, defaults)
 
-    def step(self, closure):
+    def step(self, closure: Optional[Callable[[], float]] = None) -> Optional[float]:
         if closure is None:
             raise ValueError("ARS requires a closure.")
 
@@ -30,7 +33,7 @@ class ARSOptimizer(Optimizer):
         if 'step' not in state_p: state_p['step'] = 0
         state_p['step'] += 1
         global_step = state_p['step']
-        
+
         k = self.param_groups[0]['k']
         is_sync_step = (global_step % k == 1) or (k <= 1)
 
@@ -39,32 +42,32 @@ class ARSOptimizer(Optimizer):
             with torch.enable_grad():
                 loss = closure()
                 loss.backward()
-            
+
             with torch.no_grad():
                 for group in self.param_groups:
                     rho = group['rho']
                     adaptive = group['adaptive']
                     eps_val = group['eps']
                     beta2 = group['betas'][1]
-                    
+
                     for p in group['params']:
                         if p.grad is None: continue
                         state = self.state[p]
-                        
+
                         # Initialize states if needed, but don't update them yet
                         if 'exp_avg_sq' not in state:
                             state['exp_avg_sq'] = torch.zeros_like(p)
-                        
+
                         # Use existing v_hat for perturbation calculation
                         v_hat = state['exp_avg_sq'] / (1 - beta2 ** max(1, global_step - 1) + 1e-12)
-                        
+
                         g_nat = p.grad / (v_hat.sqrt() + eps_val)
                         if adaptive:
                             g_nat.mul_(p.abs())
-                        
+
                         norm = g_nat.norm() + 1e-12
                         perturb = g_nat * (rho / norm)
-                        
+
                         state['last_eps'] = perturb
                         state['g_base'] = p.grad.clone() # Save g1 for flatness logic
                         p.add_(perturb)
@@ -81,13 +84,13 @@ class ARSOptimizer(Optimizer):
                         if p.grad is None: continue
                         state = self.state[p]
                         p.sub_(state['last_eps']) # Restore theta
-                        
+
                         # Now p.grad is g2. We update states using g2.
                         beta1, beta2 = group['betas']
-                        
+
                         # Update v (Second Moment)
                         state['exp_avg_sq'].mul_(beta2).addcmul_(p.grad, p.grad, value=1 - beta2)
-                        
+
                         if k > 1:
                             g_base = state['g_base']
                             g_adv = p.grad
@@ -108,7 +111,7 @@ class ARSOptimizer(Optimizer):
                     for p in group['params']:
                         if p.grad is None: continue
                         state = self.state[p]
-                        
+
                         # Update v (Second Moment)
                         if 'exp_avg_sq' not in state:
                             state['exp_avg_sq'] = torch.zeros_like(p)
@@ -124,11 +127,11 @@ class ARSOptimizer(Optimizer):
         # 3. Final AdaRMSuon Update
         with torch.no_grad():
             self._ada_rmsuon_update(global_step)
-        
+
         # 4. Diagnostics Collection
         if not is_sync_step:
             self._collect_diagnostics(global_step, k)
-        
+
         return loss
 
     @torch.no_grad()
@@ -145,16 +148,16 @@ class ARSOptimizer(Optimizer):
                     vnorm = v.norm()
                     cos = dot / (gnorm * vnorm + 1e-12)
                     cos_sims.append(cos.item())
-        
+
         if cos_sims:
             if not hasattr(self, 'diagnostics'):
                 self.diagnostics = {}
-            
+
             avg_cos = sum(cos_sims) / len(cos_sims)
             # Track per-position in cycle (1 is sync, 2..k, 0 are lazy)
             pos = global_step % k
             key = f'cos_pos_{pos}'
-            
+
             if key not in self.diagnostics:
                 self.diagnostics[key] = avg_cos
             else:
@@ -174,22 +177,22 @@ class ARSOptimizer(Optimizer):
                 state = self.state[p]
                 if 'exp_avg' not in state:
                     state['exp_avg'] = torch.zeros_like(p)
-                
+
                 exp_avg = state['exp_avg']
                 # Update m (Momentum) using current p.grad (which might be g2 or corrected g)
                 exp_avg.mul_(beta1).add_(p.grad, alpha=1 - beta1)
-                
+
                 m_hat = exp_avg / (1 - beta1 ** global_step)
                 v_hat = state['exp_avg_sq'] / (1 - beta2 ** global_step)
 
                 if is_rmsuon:
                     m_scaled = m_hat / (v_hat.sqrt() + eps)
                     energy = m_scaled.norm()
-                    
+
                     m_flat = m_scaled.view(m_scaled.size(0), -1) if p.ndim == 4 else m_scaled
                     s_ortho = zeropower_via_newtonschulz5(m_flat, steps=ns_steps)
                     if p.ndim == 4: s_ortho = s_ortho.view(m_scaled.shape)
-                    
+
                     update = energy * s_ortho
                     if wd != 0: p.mul_(1 - lr * wd)
                     p.add_(update, alpha=-lr)
