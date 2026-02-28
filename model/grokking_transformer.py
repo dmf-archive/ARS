@@ -1,13 +1,14 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
+
 
 class Embed(nn.Module):
     def __init__(self, d_vocab, d_model):
         super().__init__()
         self.W_E = nn.Parameter(torch.randn(d_model, d_vocab) / np.sqrt(d_model))
-    
+
     def forward(self, x):
         # x shape: (batch, seq)
         # self.W_E shape: (d_model, d_vocab)
@@ -19,7 +20,7 @@ class Unembed(nn.Module):
     def __init__(self, d_vocab, d_model):
         super().__init__()
         self.W_U = nn.Parameter(torch.randn(d_model, d_vocab) / np.sqrt(d_vocab))
-    
+
     def forward(self, x):
         return x @ self.W_U
 
@@ -27,7 +28,7 @@ class PosEmbed(nn.Module):
     def __init__(self, max_ctx, d_model):
         super().__init__()
         self.W_pos = nn.Parameter(torch.randn(max_ctx, d_model) / np.sqrt(d_model))
-    
+
     def forward(self, x):
         return x + self.W_pos[:x.shape[-2]]
 
@@ -62,7 +63,7 @@ class MLP(nn.Module):
         self.W_out = nn.Parameter(torch.randn(d_model, d_mlp) / np.sqrt(d_model))
         self.b_out = nn.Parameter(torch.zeros(d_model))
         self.act_type = act_type
-        
+
     def forward(self, x):
         x = torch.einsum('md,bpd->bpm', self.W_in, x) + self.b_in
         if self.act_type == 'ReLU':
@@ -77,7 +78,7 @@ class TransformerBlock(nn.Module):
         super().__init__()
         self.attn = Attention(d_model, num_heads, d_head, n_ctx)
         self.mlp = MLP(d_model, d_mlp, act_type)
-    
+
     def forward(self, x):
         x = x + self.attn(x)
         x = x + self.mlp(x)
@@ -90,7 +91,7 @@ class GrokkingTransformer(nn.Module):
         self.pos_embed = PosEmbed(n_ctx, d_model)
         self.blocks = nn.ModuleList([TransformerBlock(d_model, d_mlp, d_head, num_heads, n_ctx, act_type) for _ in range(num_layers)])
         self.unembed = Unembed(d_vocab, d_model)
-    
+
     def forward(self, x):
         x = self.embed(x)
         x = self.pos_embed(x)

@@ -1,9 +1,13 @@
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from enum import Enum, Flag, auto
 from importlib import import_module
-from enum import Enum, auto, Flag
-from typing import Any, Callable, Optional, Set
+from typing import Any
+
 import torch
+
 from utils.nn import disable_running_stats, enable_running_stats
+
 
 class Capability(Flag):
     NONE = 0
@@ -30,11 +34,11 @@ class OptimizerMetadata:
 
 OPTIMIZER_REGISTRY: dict[str, OptimizerMetadata] = {
     "AdamW": OptimizerMetadata(
-        cls_name="AdamW", module_name="torch.optim", 
+        cls_name="AdamW", module_name="torch.optim",
         expects_param_groups=True
     ),
     "AdaHessian": OptimizerMetadata(
-        cls_name="Adahessian", module_name="ada_hessian", 
+        cls_name="Adahessian", module_name="ada_hessian",
         capabilities=Capability.SECOND_ORDER
     ),
     "Muon": OptimizerMetadata(
@@ -43,33 +47,33 @@ OPTIMIZER_REGISTRY: dict[str, OptimizerMetadata] = {
         extra_config_keys=["momentum", "betas", "eps", "ns_steps"]
     ),
     "RMSuon": OptimizerMetadata(
-        cls_name="RMSuon", module_name="rmsuon", 
+        cls_name="RMSuon", module_name="rmsuon",
         grouping=GroupingStrategy.RMSUON, expects_param_groups=True,
         extra_config_keys=["betas", "eps"]
     ),
     "AdaRMSuon": OptimizerMetadata(
-        cls_name="AdaRMSuon", module_name="ada_rmsuon", 
+        cls_name="AdaRMSuon", module_name="ada_rmsuon",
         grouping=GroupingStrategy.RMSUON, expects_param_groups=True,
         extra_config_keys=["betas", "eps"]
     ),
     "ARS": OptimizerMetadata(
-        cls_name="ARSOptimizer", module_name="ars", 
+        cls_name="ARSOptimizer", module_name="ars",
         grouping=GroupingStrategy.RMSUON, expects_param_groups=True,
         capabilities=Capability.REQUIRES_CLOSURE | Capability.BN_PROTECTION,
         extra_config_keys=["betas", "eps", "rho", "k", "alpha"]
     ),
     "ARG": OptimizerMetadata(
-        cls_name="ARGOptimizer", module_name="arg", 
+        cls_name="ARGOptimizer", module_name="arg",
         grouping=GroupingStrategy.RMSUON, expects_param_groups=True,
         capabilities=Capability.REQUIRES_CLOSURE | Capability.SECOND_ORDER | Capability.BN_PROTECTION,
         extra_config_keys=["betas", "eps", "rho"]
     ),
     "KFAC": OptimizerMetadata(
-        cls_name="KFACOptimizer", module_name="kfac", 
+        cls_name="KFACOptimizer", module_name="kfac",
         capabilities=Capability.REQUIRES_MODEL
     ),
     "DiagHadron": OptimizerMetadata(
-        cls_name="DiagHadron", module_name="diag_hadron", 
+        cls_name="DiagHadron", module_name="diag_hadron",
         capabilities=Capability.REQUIRES_MODEL, expects_param_groups=True
     ),
     "LARS": OptimizerMetadata(
@@ -102,13 +106,13 @@ class SmartOptimizer:
         self.criterion = criterion
         self.device = device
         self.name = metadata.cls_name
-        
+
         # 暴露给外部的标签
         self.tags = {
             "accepts_pi_signal": Capability.PI_AWARE in metadata.capabilities,
             "requires_second_order": Capability.SECOND_ORDER in metadata.capabilities
         }
-        
+
         self._step_logits = None
         self._step_loss = None
 
@@ -149,7 +153,7 @@ class SmartOptimizer:
                 enable_running_stats(self.model) # 确保最后恢复
             else:
                 step_output = self.optimizer.step(lambda: self._base_closure(train_fn, batch))
-            
+
             logits, loss = self._step_logits, self._step_loss
             if loss is None and isinstance(step_output, torch.Tensor):
                 loss = step_output
@@ -164,7 +168,7 @@ class SmartOptimizer:
             else:
                 loss.backward(create_graph=Capability.SECOND_ORDER in self.metadata.capabilities)
                 self.optimizer.step()
-        
+
         return logits, loss
 
     def state_dict(self):
@@ -182,10 +186,10 @@ def _import_optimizer(module_name: str, class_name: str) -> type[torch.optim.Opt
 def _create_specialized_param_groups(params: list[torch.nn.Parameter], meta: OptimizerMetadata, config: dict) -> list[dict]:
     is_special = lambda p: p.ndim >= 2 and max(p.shape) < 10000
     flag_name = "use_muon" if meta.grouping == GroupingStrategy.MUON else "is_rmsuon_group"
-    
+
     special_params = [p for p in params if p.requires_grad and is_special(p)]
     adam_params = [p for p in params if p.requires_grad and not is_special(p)]
-    
+
     groups = []
     if special_params:
         grp = {
@@ -197,7 +201,7 @@ def _create_specialized_param_groups(params: list[torch.nn.Parameter], meta: Opt
         for k in meta.extra_config_keys:
             if k in config: grp[k] = config[k]
         groups.append(grp)
-        
+
     if adam_params:
         groups.append({
             'params': adam_params,
@@ -215,7 +219,7 @@ def get_optimizer(name: str, params: list[dict], model: torch.nn.Module, criteri
 
     meta = OPTIMIZER_REGISTRY[name]
     opt_cls = _import_optimizer(meta.module_name, meta.cls_name)
-    
+
     opt_config = config.copy()
     if meta.grouping != GroupingStrategy.NONE:
         flag_name = "use_muon" if meta.grouping == GroupingStrategy.MUON else "is_rmsuon_group"
@@ -225,7 +229,7 @@ def get_optimizer(name: str, params: list[dict], model: torch.nn.Module, criteri
         else:
             all_params = [p for g in params for p in g['params']]
             init_params = _create_specialized_param_groups(all_params, meta, opt_config)
-        
+
         # 清理冗余配置
         for key in ["adam_lr", "adam_betas", "adam_eps", "adam_weight_decay"]:
             opt_config.pop(key, None)
@@ -233,7 +237,7 @@ def get_optimizer(name: str, params: list[dict], model: torch.nn.Module, criteri
         init_params = params
     else:
         init_params = next(iter(params))['params']
-    
+
     if Capability.REQUIRES_MODEL in meta.capabilities:
         optimizer = opt_cls(model, **opt_config)
     else:
