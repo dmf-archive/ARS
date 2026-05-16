@@ -30,7 +30,7 @@
 
 ### [`ref/Adafisher/`](ref/Adafisher/)
 
-- 外部库源码，一个并不太可靠的二阶优化器，提供了最早的框架灵感。
+- 外部库源码，一个不太可靠的二阶优化器，提供了最早的框架灵感。
 
 ## 3. 学习动力学与现象学 (Learning Dynamics & Phenomenology)
 

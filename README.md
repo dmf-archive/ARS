@@ -48,6 +48,7 @@ Experimental Setup: Qwen3 (RoPE, 3-layer), Context 255. Aimed at probing optimiz
 | **ARS2-Neo (Base)** | 96.10 | 3055.47 | **Overfitting** | Rapidly drops into sharp minima, generalization collapse |
 | **ARS2-Neo (Sync)** | **90.69** | **330.85** | **Optimal Generalization Ceiling** | `ρ=0.3`, successfully suppresses overfitting |
 | **ARS2-Neo (AGA)** | 93.23 | 414.83 | Trade-off between Efficiency & Stability | `λ=0.5`, Adaptive Geometric Awareness |
+| **ARS2C (AGA)** | 94.11 | **352.27** | **Christoffel Dynamic β** | `β₂∈[0.535,0.644]`, −15% final PPL vs AGA |
 
 **Core Insight**: ARS2-Neo (AGA) reaches 93.23 PPL in just 3 epochs, far surpassing AdamW's best performance, proving the generational advantage of second-order geometric information in capturing semantic patterns.
 
