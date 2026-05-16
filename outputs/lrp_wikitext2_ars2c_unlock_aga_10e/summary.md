@@ -1,6 +1,7 @@
 # ARS-Bench Experiment Report
 
 ## Configuration Summary
+
 ```json
 {
   "experiment": {
@@ -50,6 +51,7 @@
 ```
 
 ## Training Results
+
 | Epoch | Task | Train Loss | Min Loss | Min Step | LR | PI | Eff. Gamma | Entropy | Grad Norm | Epoch Time (s) | Peak GPU Mem (MB) | Diag alignment | Diag alpha_t | Diag beta1_dynamic | Diag beta2_dynamic | Diag current_rho | Diag effective_k | Diag ema_gap | Diag group_0_muon_avg_norm | Diag group_1_adam_avg_norm | Diag phi_std | Diag phi_t | Diag surrogate_gap | Diag threshold | Eval Loss | Eval Perplexity |
 |-------|------|------------|----------|----------|----|----|------------|---------|-----------|----------------|-------------------|----------------|--------------|--------------------|--------------------|------------------|------------------|--------------|----------------------------|----------------------------|--------------|------------|--------------------|----------------|-----------|-----------------|
 | 1 | wikitext2 | 5.1044 | N/A | N/A | 0.001000 | 0.003 | N/A | 5.114 | 0.6219 | 636.64 | 3134.3 | 0.0707 | 0.0000 | 0.5353 | 0.5353 | 0.3000 | 2.3061 | 0.0000 | 378.1332 | 30.9251 | 0.0623 | 0.0260 | 0.0000 | -0.0312 | 4.79 | 119.72 |
@@ -64,5 +66,6 @@
 | 10 | wikitext2 | 1.7529 | N/A | N/A | 0.001000 | 0.039 | N/A | 1.912 | 0.7144 | 657.92 | 3593.9 | 0.2758 | 0.0000 | 0.6378 | 0.6378 | 0.3000 | 2.3918 | 0.0000 | 906.8739 | 51.4026 | 0.0214 | -0.0160 | 0.0000 | -0.0107 | 5.86 | 352.27 |
 
 ## Performance Summary
+
 - **Best Validation Metrics**: wikitext2 Loss: 5.86, wikitext2 Perplexity: 94.11
 - **Final Validation Metrics**: wikitext2: {"loss": 5.864388537051073, "perplexity": 352.2666922098995}

@@ -1,6 +1,7 @@
+from collections.abc import Callable
+
 import torch
 from torch.optim.optimizer import Optimizer
-from typing import Optional, Callable
 
 from .ada_rmsuon import zeropower_via_newtonschulz5
 
@@ -22,7 +23,7 @@ class ARGOptimizer(Optimizer):
                 defaults[k] = v
         super().__init__(params, defaults)
 
-    def step(self, closure: Optional[Callable[[], float]] = None) -> Optional[float]:
+    def step(self, closure: Callable[[], float] | None = None) -> float | None:
         if closure is None:
             raise ValueError("ARG requires a closure.")
 

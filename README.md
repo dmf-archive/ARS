@@ -1,4 +1,4 @@
-# ARS2-Neo: Gliding Directly Towards Global Optima Along Geodesics of the Loss Landscape
+# ARS2C-AGA: Gliding Directly Towards Global Optima Along Geodesics of the Loss Landscape
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Python](https://img.shields.io/badge/Python-3.12+-green.svg)](https://python.org)
@@ -50,8 +50,6 @@ Experimental Setup: Qwen3 (RoPE, 3-layer), Context 255. Aimed at probing optimiz
 | **ARS2-Neo (AGA)** | 93.23 | 414.83 | Trade-off between Efficiency & Stability | `λ=0.5`, Adaptive Geometric Awareness |
 | **ARS2C (AGA)** | 94.11 | **352.27** | **Christoffel Dynamic β** | `β₂∈[0.535,0.644]`, −15% final PPL vs AGA |
 
-**Core Insight**: ARS2-Neo (AGA) reaches 93.23 PPL in just 3 epochs, far surpassing AdamW's best performance, proving the generational advantage of second-order geometric information in capturing semantic patterns.
-
 ### 3.2 CIFAR-10 Visual Classification
 
 Experimental Setup: ResNet-18, Batch Size 256.
@@ -66,14 +64,15 @@ Experimental Setup: ResNet-18, Batch Size 256.
 
 To verify the dynamic characteristics of the optimizer during generalization phase transitions, we compared the performance of various optimizers on a modular addition task (`p=113`, `train_frac=0.3`).
 
-| Optimizer | Fitting (Epoch) | Grokking (Epoch) | Convergence (Epoch) | Status |
-| :--- | :--- | :--- | :--- | :--- |
-| **AdamW** | ~140 | >600 | N/A | Severe generalization lag; failed to grok within 600 epochs. |
-| **Muon** | ~150 | >400 | N/A | Pure geometric optimization wanders slowly without adaptive energy. |
-| **ARS2-Neo (Base)** | **20** | **180** | **250** | **Ultra-fast Grokking**. Energy-Geometry Decoupling significantly accelerates phase transition. |
-| **ARS2-Neo (AGA)** | **20** | **150** | **200** | **Optimal Dynamics**. Adaptive Geometric Awareness further shortens generalization lag. |
+| Optimizer | Fitting (Epoch) | Grokking (Epoch) | Convergence (Epoch) | Best Eval Acc | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **AdamW** | 113 | >600 | N/A | 15.65% | Failed to grok; stuck in overfitting basin. |
+| **Muon** | 22 | >347 | N/A | 36.83% | Fast fitting but no generalization; spectral collapse without energy adaptation. |
+| **ARS2-Neo (Base)** | 11 | 239 | 290 | 99.53% | Energy-Geometry Decoupling enables phase transition. |
+| **ARS2-Neo (AGA)** | 12 | **77** | **116** | **99.60%** | **Optimal Dynamics**. AGA accelerates grokking by 3× vs Base. |
+| **ARS2C (AGA)** | **13** | **75** | **172** | 99.51% | **Christoffel Dynamic β**. Fastest grokking onset at epoch 75. |
 
-**Core Insight**: ARS2-Neo accelerates the occurrence of Grokking by **over 4x**, strongly proving that Energy-Geometry Decoupling avoids ineffective wandering in overfitting basins, directly traversing high-dimensional canyons to reach generalized solutions.
+**Core Insight**: ARS2-Neo (AGA) accelerates the occurrence of Grokking by **over 7.8×** compared to AdamW, strongly proving that Energy-Geometry Decoupling avoids ineffective wandering in overfitting basins, directly traversing high-dimensional canyons to reach generalized solutions.
 
 ## 4. Quick Start
 

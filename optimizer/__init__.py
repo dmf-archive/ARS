@@ -88,7 +88,7 @@ OPTIMIZER_REGISTRY: dict[str, OptimizerMetadata] = {
         capabilities=Capability.REQUIRES_CLOSURE | Capability.BN_PROTECTION,
         extra_config_keys=[
             "betas", "eps", "rho", "k", "alpha", "ns_steps",
-            "adaptive_sync", "asi_enabled", "adaptive_beta", "adaptive_lambda", "adaptive_gamma"
+            "adaptive_sync", "adaptive_beta", "adaptive_lambda", "adaptive_gamma"
         ]
     ),
     "ARS2C": OptimizerMetadata(
@@ -97,7 +97,7 @@ OPTIMIZER_REGISTRY: dict[str, OptimizerMetadata] = {
         capabilities=Capability.REQUIRES_CLOSURE | Capability.BN_PROTECTION,
         extra_config_keys=[
             "betas", "eps", "rho", "k", "alpha", "ns_steps",
-            "adaptive_sync", "asi_enabled", "adaptive_beta", "adaptive_lambda", "adaptive_gamma",
+            "adaptive_sync", "adaptive_beta", "adaptive_lambda", "adaptive_gamma",
             "beta1_min", "beta1_max", "beta2_min", "beta2_max"
         ]
     ),

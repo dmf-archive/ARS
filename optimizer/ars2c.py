@@ -1,28 +1,25 @@
 from collections.abc import Callable
-from typing import Any, Dict
 
 import torch
-import torch.distributed as dist
-from torch.optim.optimizer import Optimizer
 
-from optimizer.ars2_neo import ARS2Neo, zeropower_via_newtonschulz5, adamw_step_kernel
+from optimizer.ars2_neo import ARS2Neo, zeropower_via_newtonschulz5
 
 
 class ARS2C(ARS2Neo):
     """
     ARS2C: Christoffel-Aware Dynamic Beta Optimization.
 
-    ARS2C extends ARS2-Neo by replacing fixed momentum decay rates β₁, β₂ with
+    ARS2C extends ARS2-Neo by replacing fixed momentum decay rates beta1, beta2 with
     Christoffel-symbol-driven dynamic betas derived from the Fisher information
     manifold. The HVP implicitly sampled during SAM sync steps is reused at zero
     additional forward/backward cost to compute a structured Christoffel matrix
     c_ortho via Newton-Schulz orthogonalization. The geometric alignment between
-    c_ortho and the update direction s_ortho then drives β: high alignment
-    (update direction aligns with rapid curvature change) → high β (trust history);
-    low alignment → low β (fast adaptation).
+    c_ortho and the update direction s_ortho then drives beta: high alignment
+    (update direction aligns with rapid curvature change) -> high beta (strong filtering);
+    low alignment -> low beta (fast adaptation).
 
     Args:
-    - params: parameter groups; 2D+ params use dynamic-β ARS2 track, 1D params use fixed-β AdamW.
+    - params: parameter groups; 2D+ params use dynamic-beta ARS2 track, 1D params use fixed-beta AdamW.
     - lr: learning rate, default 1e-3.
     - betas: fallback Adam beta tuple (beta1, beta2) for 1D params and initial steps, default (0.9, 0.999).
     - eps: Adam epsilon, default 1e-8.
@@ -32,24 +29,23 @@ class ARS2C(ARS2Neo):
     - k: SAM mode; k=0 disables SAM, k=1 synchronous, k>1 delayed, default 1.
     - alpha: base shear-force injection strength, default 0.1.
     - adaptive_sync: enable AGA sync mode, default False.
-    - asi_enabled: enable ASI adaptive rho, default False.
-    - adaptive_beta: EMA coefficient for AGA/ASI, default 0.99.
+    - adaptive_beta: EMA coefficient for AGA, default 0.99.
     - adaptive_lambda: AGA sensitivity, default 2.0.
-    - adaptive_gamma: AGA/ASI exponent, default 2.0.
-    - beta1_min, beta1_max: dynamic range for β₁, default (0.5, 0.95).
-    - beta2_min, beta2_max: dynamic range for β₂, default (0.9, 0.9995).
+    - adaptive_gamma: AGA exponent, default 2.0.
+    - beta1_min, beta1_max: dynamic range for beta1, default (0.5, 0.9995).
+    - beta2_min, beta2_max: dynamic range for beta2, default (0.5, 0.9995).
     """
 
     def __init__(self, params, lr: float = 1e-3, betas: tuple[float, float] = (0.9, 0.999),
                  eps: float = 1e-8, weight_decay: float = 0.01, ns_steps: int = 5,
                  rho: float = 0.1, k: int = 1, alpha: float = 0.1,
-                 adaptive_sync: bool = False, asi_enabled: bool = False,
+                 adaptive_sync: bool = False,
                  adaptive_beta: float = 0.99, adaptive_lambda: float = 2.0, adaptive_gamma: float = 2.0,
                  beta1_min: float = 0.5, beta1_max: float = 0.95,
                  beta2_min: float = 0.9, beta2_max: float = 0.9995):
         super().__init__(params, lr=lr, betas=betas, eps=eps, weight_decay=weight_decay,
                          ns_steps=ns_steps, rho=rho, k=k, alpha=alpha,
-                         adaptive_sync=adaptive_sync, asi_enabled=asi_enabled,
+                         adaptive_sync=adaptive_sync,
                          adaptive_beta=adaptive_beta, adaptive_lambda=adaptive_lambda,
                          adaptive_gamma=adaptive_gamma)
         self.defaults['beta1_min'] = beta1_min
@@ -73,7 +69,6 @@ class ARS2C(ARS2Neo):
         group0 = self.param_groups[0]
         k = group0.get('k', 1)
         adaptive_sync = group0.get('adaptive_sync', False)
-        asi_enabled = group0.get('asi_enabled', False)
         is_sam_enabled = k > 0 or adaptive_sync
 
         with torch.enable_grad():
@@ -116,7 +111,7 @@ class ARS2C(ARS2Neo):
             self.state['last_sync_step'] = global_step
             self.state['sync_steps'] += 1
             for group in self.param_groups:
-                rho = self.state['current_rho'] if asi_enabled else group.get('rho', 0.1)
+                rho = group.get('rho', 0.1)
                 if rho <= 0:
                     continue
                 eps = group.get('eps', 1e-8)
@@ -145,39 +140,8 @@ class ARS2C(ARS2Neo):
                 loss_adv = closure()
                 loss_adv.backward()
 
-            if asi_enabled:
-                surrogate_gap = (loss_adv - loss).item()
-                self.state['surrogate_gap'] = surrogate_gap
-                beta = group0.get('adaptive_beta', 0.99)
-
-                if self.state['sync_steps'] == 1:
-                    self.state['ema_gap'] = abs(surrogate_gap)
-                    self.state['ema_loss'] = loss.item()
-                else:
-                    self.state['ema_gap'] = beta * self.state['ema_gap'] + (1 - beta) * abs(surrogate_gap)
-
-                prev_ema_loss = self.state.get('ema_loss', loss.item())
-                self.state['ema_loss'] = beta * prev_ema_loss + (1 - beta) * loss.item()
-                diff_loss = self.state['ema_loss'] - prev_ema_loss
-
-                asi_lr = group0.get('alpha', 0.1) * 0.01
-                gamma = group0.get('adaptive_gamma', 2.0)
-                dh = abs(surrogate_gap) - self.state['ema_gap']
-
-                improving = diff_loss < 0
-                sharpening = dh > 0
-
-                if improving:
-                    factor = 1.0 + asi_lr * (gamma if sharpening else 1.0)
-                else:
-                    factor = 1.0 - asi_lr * (gamma if sharpening else 1.0)
-
-                self.state['current_rho'] *= factor
-                rho_base = group0.get('rho', 0.1)
-                self.state['current_rho'] = max(rho_base * 0.1, min(self.state['current_rho'], rho_base * 10.0))
-
             for group in self.param_groups:
-                rho = self.state['current_rho'] if asi_enabled else group.get('rho', 0.1)
+                rho = group.get('rho', 0.1)
                 if rho <= 0:
                     continue
                 _eps = group.get('eps', 1e-8)
@@ -278,7 +242,7 @@ class ARS2C(ARS2Neo):
         if 'c_ortho' in state:
             c_ortho = state.pop('c_ortho')
             c_magnitude = state.pop('c_magnitude', 0.0)
-            s_flat = s_ortho.view(s_ortho.size(0), -1) if s_ortho.ndim == 4 else s_ortho
+            s_flat = s_ortho.view(s_ortho.size(0), -1) if s_ortho.ndim >= 2 else s_ortho
             s_unit = s_flat / (s_flat.norm() + 1e-12)
             alignment_raw = float((c_ortho * s_unit).sum().abs())
             mag_gate = float(torch.sigmoid(torch.tensor(c_magnitude, device=p.device)))
