@@ -1,13 +1,11 @@
 ---
 title: "Agent操作手册"
 version: "latest"
-last_updated: "2025-11-16"
+last_updated: "2026-05-16"
 ---
 
 ## 定义
 
-- Agent: AI 架构师与工程专家，本规范执行主体。
-- 证据: 文件系统、内容、用户指令、测试输出等唯一行动依据。
 - REQ (Requirement): 必须严格遵守的强制性规则。
 - CON (Constraint): 必须满足的限制或约束。
 - GUD (Guideline): 推荐遵循的最佳实践或建议。
@@ -21,12 +19,7 @@ last_updated: "2025-11-16"
 2. GUD-002: 若指令与形式化第一性原理（数学公式、物理定律、逻辑推导）冲突，优先遵守原理并指出冲突。
 3. GUD-003: 当行为与预期严重不符时，停止试错，回归第一性原理进行形式化分析。
 4. GUD-004: 若行动依据的内部规则或文档过时/错误，优先报告并修正文档，再继续任务。
-
-## 知识管理
-
-1. GUD-001: 信任新知识，严禁使用旧名词替换新概念。
-2. GUD-002: 关键术语须立即通过 Tavily 或 DeepWiki 查询。
-3. REQ-003: `transformers` 开发仅参考 `qwen3` 实现。
+5. GUD-001: 信任新知识，严禁使用旧名词替换新概念。
 
 ## 编码规范
 
@@ -40,17 +33,16 @@ last_updated: "2025-11-16"
 
 ### ARS2-Neo 优化器豁免条款
 
-REQ-001-EX: `optimizer/ars2_neo.py` 是唯一获准包含 Docstring 的源代码文件。
+REQ-001-EX: ARS2-Neo/ARS2C 优化器系统是唯一获准包含 Docstring 的源代码文件。
 
 - 该豁免旨在通过详细文档向用户阐明 ARS2-Neo 的设计哲学、使用方法和参数配置，
 - 因其作为公共 API 的复杂优化器，需要向终端用户提供清晰的使用指南。
-- 此豁免不适用于该文件内的普通注释，仅允许在类和方法级别使用 Docstring。
+- 仅允许在类和方法级别使用 Docstring，依然禁止普通注释。
 
 ## 设计约束
 
 1. CON-001: 无必要不增实体（代码、函数、类或依赖）。
-2. CON-002: 严禁未经批准的超参数或外部状态（如 EMA），模型参数是状态的唯一载体。
-3. CON-003: 严禁生成或使用 Gradio 分享链接。
+2. CON-002: 严禁未经批准的超参数或启发式外部状态（如 EMA）。
 
 ## 环境管理
 
@@ -76,9 +68,9 @@ REQ-001-EX: `optimizer/ars2_neo.py` 是唯一获准包含 Docstring 的源代码
 
 ## 训练架构
 
-1. REQ-001: **脚本即实验** - 彻底废弃高度耦合的 `Trainer` 类。所有训练逻辑（数据流、模型初始化、训练循环）必须完全内聚于 `exp/` 目录下的独立脚本中。
-2. REQ-002: **SmartOptimizer 驱动** - 必须使用 `optimizer.get_optimizer` 获取 `SmartOptimizer` 实例。
-3. REQ-003: **原子化执行** - 训练循环中必须通过 `smart_opt.step(batch, train_fn)` 执行更新，其中 `train_fn` 负责前向传播与损失计算。`SmartOptimizer` 自动处理闭包、BN 状态保护及二阶梯度逻辑。
+1. REQ-001: 脚本即实验 - 所有训练逻辑（数据流、模型初始化、训练循环）必须完全内聚于 `exp/` 目录下的独立脚本中。
+2. REQ-002: SmartOptimizer 驱动 - 必须使用 `optimizer.get_optimizer` 获取 `SmartOptimizer` 实例。
+3. REQ-003: 原子化执行 - 训练循环中必须通过 `smart_opt.step(batch, train_fn)` 执行更新，其中 `train_fn` 负责前向传播与损失计算。`SmartOptimizer` 自动处理闭包、BN 状态保护及二阶梯度逻辑。
 
 ## 调试与异常
 
@@ -87,20 +79,9 @@ REQ-001-EX: `optimizer/ars2_neo.py` 是唯一获准包含 Docstring 的源代码
 
 ## 内存与性能
 
-1. REQ-001: GPU 张量累积禁令 - 禁止使用 `.detach()` 将 GPU 张量累积至列表，必须使用流式标量累加。
+1. REQ-001: GPU 张量累积禁令 - 禁止使用 `.detach()` 将 GPU 张量累积至列表，必须使用流式累加。
 2. REQ-002: 跨 step 统计量必须进行流式计算（epoch 结束时利用累加值计算）。
 3. REQ-003: 保持实时可观测性，Summary 须在每个 epoch 更新。
-
-## 测试与验收
-
-1. AC-001: 代码通过 `ruff check . --fix` 校验。
-2. AC-002: 依赖项管理正确。
-3. AC-003: 启动命令格式正确：`python -m exp.<task_name>.train --config <path>`。
-4. AC-004: 原子重塑确保 API 对外完全透明。
-
-## 边缘情况
-
-1. GUD-001: 编辑器产生的短暂格式错误警告应忽略，若持续存在再行处理。
 
 ## 新优化器
 

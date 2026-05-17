@@ -101,6 +101,17 @@ OPTIMIZER_REGISTRY: dict[str, OptimizerMetadata] = {
             "beta1_min", "beta1_max", "beta2_min", "beta2_max"
         ]
     ),
+    "ARS2C-SAGA": OptimizerMetadata(
+        cls_name="SingleDeviceARS2CSAGA", module_name="ars2c_saga",
+        grouping=GroupingStrategy.RMSUON, expects_param_groups=True,
+        capabilities=Capability.REQUIRES_CLOSURE | Capability.BN_PROTECTION,
+        extra_config_keys=[
+            "betas", "eps", "rho", "k", "alpha", "ns_steps",
+            "adaptive_sync", "adaptive_beta", "adaptive_lambda", "adaptive_gamma",
+            "beta1_min", "beta1_max", "beta2_min", "beta2_max",
+            "rho_kappa", "rho_eta", "rho_min", "rho_max"
+        ]
+    ),
     "AdaMuon": OptimizerMetadata(
         cls_name="AdaMuon", module_name="adamuon",
         grouping=GroupingStrategy.MUON, expects_param_groups=True,

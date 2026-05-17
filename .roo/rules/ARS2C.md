@@ -33,13 +33,28 @@ ARS2C 继承自 ARS2-Neo，C 代表 Christoffel 符号 Γ^μ_νρ——信息几
 
 ### 2.3 几何对齐度
 
-`alignment_raw = |⟨c_ortho, s_unit⟩|`
+当前实现采用**行 + 列双向对齐矩阵**方案，替代了早期的全局标量退化版本：
 
-`mag_gate = σ(‖C_flat‖)`
+1. **行对齐计算**:
+   `c_row_norm = C / ‖C‖_row`
+   `s_row_norm = S / ‖S‖_row`
+   `row_alignment = (⟨c_row_norm, s_row_norm⟩ + 1) / 2`
 
-`alignment = alignment_raw · mag_gate`
+2. **列对齐计算**:
+   `c_col_norm = C / ‖C‖_col`
+   `s_col_norm = S / ‖S‖_col`
+   `col_alignment = (⟨c_col_norm, s_col_norm⟩ + 1) / 2`
 
-其中 `s_unit` 是正交化更新方向，`σ` 是 Sigmoid 函数。
+3. **几何平均融合**:
+   `alignment_matrix = √(row_alignment ⊙ col_alignment)`
+
+其中 `⊙` 表示逐元素乘法。最终 `alignment_matrix` 是一个与参数矩阵同维度的矩阵，每个元素对应一个独立的 β 调制系数。
+
+**演进说明**:
+
+- 早期标量版本通过 `(c_ortho * s_unit).sum().abs()` 将高维对齐压缩为全局标量，导致大矩阵内所有参数共享同一 β 值，抹杀了流形切空间的各向异性曲率差异。
+- 当前行 + 列对齐方案保留了矩阵级别的局部曲率信息，通过几何平均融合行列两个方向的对齐信号，在计算复杂度与精度之间取得平衡。
+- 实验数据显示，行 + 列对齐版本在收敛阶段表现更优（137 epoch vs 172 epoch 达到 99% 精度），验证了保留矩阵级对齐信息的必要性。
 
 ### 2.4 动态 β 更新
 

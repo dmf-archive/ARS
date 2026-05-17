@@ -48,7 +48,6 @@ Experimental Setup: Qwen3 (RoPE, 3-layer), Context 255. Aimed at probing optimiz
 | **ARS2-Neo (Base)** | 96.10 | 3055.47 | **Overfitting** | Rapidly drops into sharp minima, generalization collapse |
 | **ARS2-Neo (Sync)** | **90.69** | **330.85** | **Optimal Generalization Ceiling** | `ρ=0.3`, successfully suppresses overfitting |
 | **ARS2-Neo (AGA)** | 93.23 | 414.83 | Trade-off between Efficiency & Stability | `λ=0.5`, Adaptive Geometric Awareness |
-| **ARS2C (AGA)** | 94.11 | **352.27** | **Christoffel Dynamic β** | `β₂∈[0.535,0.644]`, −15% final PPL vs AGA |
 
 ### 3.2 CIFAR-10 Visual Classification
 
@@ -70,7 +69,7 @@ To verify the dynamic characteristics of the optimizer during generalization pha
 | **Muon** | 22 | >347 | N/A | 36.83% | Fast fitting but no generalization; spectral collapse without energy adaptation. |
 | **ARS2-Neo (Base)** | 11 | 239 | 290 | 99.53% | Energy-Geometry Decoupling enables phase transition. |
 | **ARS2-Neo (AGA)** | 12 | **77** | **116** | **99.60%** | **Optimal Dynamics**. AGA accelerates grokking by 3× vs Base. |
-| **ARS2C (AGA)** | **13** | **75** | **172** | 99.51% | **Christoffel Dynamic β**. Fastest grokking onset at epoch 75. |
+| **ARS2C (AGA)** | 13 | 93 | 137 | 99.06% | Curvature-aware dynamic beta. |
 
 **Core Insight**: ARS2-Neo (AGA) accelerates the occurrence of Grokking by **over 7.8×** compared to AdamW, strongly proving that Energy-Geometry Decoupling avoids ineffective wandering in overfitting basins, directly traversing high-dimensional canyons to reach generalized solutions.
 

@@ -1,5 +1,4 @@
 import sys
-import re
 from pathlib import Path
 
 
@@ -58,12 +57,12 @@ def parse_grok_summary(path: str) -> None:
 
     # Extract epoch and eval accuracy
     epoch_idx = col_map.get("Epoch", 0)
-    eval_acc_idx = col_map.get("Eval Accuracy", None)
-    train_loss_idx = col_map.get("Train Loss", None)
-    eval_loss_idx = col_map.get("Eval Loss", None)
-    train_acc_idx = col_map.get("Eval Train_accuracy", None)
-    pi_idx = col_map.get("PI", None)
-    grad_norm_idx = col_map.get("Grad Norm", None)
+    eval_acc_idx = col_map.get("Eval Accuracy")
+    train_loss_idx = col_map.get("Train Loss")
+    eval_loss_idx = col_map.get("Eval Loss")
+    train_acc_idx = col_map.get("Eval Train_accuracy")
+    pi_idx = col_map.get("PI")
+    grad_norm_idx = col_map.get("Grad Norm")
 
     # Find milestones
     milestones = {
@@ -122,7 +121,7 @@ def parse_grok_summary(path: str) -> None:
 
     # Print milestones
     print(f"\n{'─'*80}")
-    print(f"  KEY MILESTONES")
+    print("  KEY MILESTONES")
     print(f"{'─'*80}")
 
     milestone_labels = [
@@ -159,7 +158,7 @@ def parse_grok_summary(path: str) -> None:
     print(f"{'─'*80}")
 
     # Print last 5 rows for reference
-    print(f"\n  Last 5 epochs:")
+    print("\n  Last 5 epochs:")
     for row in rows[-5:]:
         epoch = int(row[epoch_idx])
         parts = [f"Epoch {epoch:>4d}"]

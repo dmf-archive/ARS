@@ -14,6 +14,20 @@ from utils.callbacks.context import TrainerContext
 from utils.data import MetricStore, StepMetric, EpochMetric, TaskMetrics
 from utils.metrics import PICalculator, compute_grad_norm
 
+MILESTONE_THRESHOLDS = {
+    "train_loss_lt_0_5": ("Train Loss < 0.5   (Fitting)", lambda e: e.avg_train_loss < 0.5),
+    "train_loss_lt_0_1": ("Train Loss < 0.1   (Overfit)", lambda e: e.avg_train_loss < 0.1),
+    "train_acc_gt_99": ("Train Acc > 99%    (Memorization)", lambda e: e.task_metrics.metrics.get("train_accuracy", 0) >= 99.0),
+    "eval_acc_gt_10": ("Eval Acc > 10%     (Early Signal)", lambda e: e.task_metrics.metrics.get("accuracy", 0) >= 10.0),
+    "eval_acc_gt_50": ("Eval Acc > 50%     (Above Chance)", lambda e: e.task_metrics.metrics.get("accuracy", 0) >= 50.0),
+    "eval_acc_gt_80": ("Eval Acc > 80%     (Strong Signal)", lambda e: e.task_metrics.metrics.get("accuracy", 0) >= 80.0),
+    "eval_acc_gt_90": ("Eval Acc > 90%     (Grokking)", lambda e: e.task_metrics.metrics.get("accuracy", 0) >= 90.0),
+    "eval_acc_gt_95": ("Eval Acc > 95%     (Near Convergence)", lambda e: e.task_metrics.metrics.get("accuracy", 0) >= 95.0),
+    "eval_acc_gt_98": ("Eval Acc > 98%     (Convergence)", lambda e: e.task_metrics.metrics.get("accuracy", 0) >= 98.0),
+    "eval_acc_gt_99": ("Eval Acc > 99%     (Full Convergence)", lambda e: e.task_metrics.metrics.get("accuracy", 0) >= 99.0),
+}
+
+
 def get_dataloaders(config):
     task_cfg = config["task"]
     data_cfg = config["data"]
@@ -21,25 +35,25 @@ def get_dataloaders(config):
     fraction = task_cfg.get("fraction", 0.3)
     batch_size = data_cfg.get("batch_size", 512)
     seed = config["experiment"].get("seed", 42)
-    
+
     torch.manual_seed(seed)
     equals_token = p
     x, y = torch.meshgrid(torch.arange(p), torch.arange(p), indexing='ij')
     x, y = x.flatten(), y.flatten()
     equals = torch.ones(x.shape, dtype=torch.int64) * equals_token
-    
+
     prompts = torch.stack([x, y, equals], dim=1)
     answers = (x + y) % p
-    
+
     dataset = TensorDataset(prompts, answers)
     train_size = int(fraction * len(dataset))
     test_size = len(dataset) - train_size
-    
+
     train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
-    
+
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=len(test_dataset), shuffle=False)
-    
+
     return train_loader, test_loader
 
 def train_step(model, batch, criterion, device, **kwargs):
@@ -72,12 +86,12 @@ def main():
     torch.manual_seed(config["experiment"]["seed"])
     if torch.cuda.is_available():
         torch.cuda.manual_seed(config["experiment"]["seed"])
-    
+
     output_dir = Path("outputs") / Path(args.config).stem
     output_dir.mkdir(parents=True, exist_ok=True)
 
     train_loader, test_loader = get_dataloaders(config)
-    
+
     p = config["task"].get("p", 113)
     model_config = config["model"].copy()
     arch = model_config.pop("arch")
@@ -93,7 +107,7 @@ def main():
     smart_opt = get_optimizer(opt_name, param_groups, model=model, criterion=criterion, device=device, **opt_config)
 
     store = MetricStore()
-    context = TrainerContext(config=config, output_dir=output_dir, device=device, model=model, 
+    context = TrainerContext(config=config, output_dir=output_dir, device=device, model=model,
                              optimizer=smart_opt.optimizer, store=store, total_epochs=config["experiment"]["epochs"])
 
     pi_cfg = config.get("pi", {"gamma": 1.0, "alpha": 1.0, "ema_beta": 0.9})
@@ -105,23 +119,25 @@ def main():
 
     broadcast("on_train_begin")
 
+    saved_milestones: set[str] = set()
+
     for epoch in range(config["experiment"]["epochs"]):
         context.current_epoch, context.current_task_name, context.is_training = epoch, "mod_addition", True
         context.total_steps_in_epoch = len(train_loader)
         model.train()
         broadcast("on_epoch_begin")
-        
+
         epoch_start_time = time.time()
         if device.type == 'cuda': torch.cuda.reset_peak_memory_stats()
-            
+
         epoch_loss_sum, epoch_entropy_sum, epoch_correct, num_samples, epoch_grad_norm_list = torch.tensor(0.0, device=device), torch.tensor(0.0, device=device), 0, 0, []
 
         for step, batch in enumerate(train_loader):
             context.current_step_in_epoch = step
             broadcast("on_step_begin")
-            
+
             logits, loss = smart_opt.step(batch, train_step)
-            
+
             with torch.no_grad():
                 loss_val = loss.item()
                 epoch_loss_sum += loss * batch[1].size(0)
@@ -133,7 +149,7 @@ def main():
                 gn = compute_grad_norm(model, return_tensor=True)
                 if gn is not None: epoch_grad_norm_list.append(gn)
 
-            store.add_step(StepMetric(task_name="mod_addition", global_step=context.global_step, task_epoch=epoch, 
+            store.add_step(StepMetric(task_name="mod_addition", global_step=context.global_step, task_epoch=epoch,
                                       step_in_epoch=step, loss=loss_val, learning_rate=smart_opt.param_groups[0]['lr']))
             broadcast("on_step_end")
             context.global_step += 1
@@ -141,11 +157,11 @@ def main():
         context.is_training = False
         val_metrics = validate_epoch(model, test_loader, criterion, device)
         val_metrics["train_accuracy"] = 100.0 * epoch_correct / num_samples if num_samples > 0 else 0.0
-        
+
         avg_train_loss = (epoch_loss_sum / num_samples).item() if num_samples > 0 else 0.0
         avg_gn_tensor = torch.stack(epoch_grad_norm_list).mean() if epoch_grad_norm_list else None
         avg_gn = avg_gn_tensor.item() if avg_gn_tensor is not None else None
-        
+
         avg_entropy, avg_pi = None, None
         if num_samples > 0:
             avg_entropy_tensor = epoch_entropy_sum / num_samples
@@ -158,7 +174,7 @@ def main():
             diagnostics = copy.deepcopy(diagnostics)
         else:
             diagnostics = {}
-            
+
         for i, group in enumerate(smart_opt.param_groups):
             name = "muon" if group.get("use_muon") or group.get("is_rmsuon_group") else "adam"
             norms = [p.norm().item() for p in group['params']]
@@ -168,10 +184,18 @@ def main():
                                     task_metrics=TaskMetrics(metrics=val_metrics), avg_pi_obj=avg_pi, avg_entropy=avg_entropy,
                                     grad_norm=avg_gn, learning_rate=smart_opt.param_groups[0]['lr'], diagnostics=diagnostics,
                                     epoch_time_s=time.time() - epoch_start_time, peak_gpu_mem_mb=torch.cuda.max_memory_allocated() / (1024**2) if device.type == 'cuda' else None))
-        
+
         broadcast("on_epoch_end")
-        broadcast("save")
-        if val_metrics["accuracy"] >= 99.5:
+
+        last_epoch = store.get_latest_epoch_for_task("mod_addition")
+        if last_epoch is not None:
+            for key, (label, cond) in MILESTONE_THRESHOLDS.items():
+                if key not in saved_milestones and cond(last_epoch):
+                    saved_milestones.add(key)
+                    broadcast("save")
+                    print(f"  [Milestone] {label} at epoch {epoch} — checkpoint saved")
+
+        if val_metrics["accuracy"] >= 99.0:
             print(f"Early stopping at epoch {epoch} as test accuracy reached {val_metrics['accuracy']:.2f}%")
             break
 

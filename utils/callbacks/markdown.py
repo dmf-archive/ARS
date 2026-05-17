@@ -49,9 +49,13 @@ class MDLogger(Callback):
     def _generate_report(self, epoch_data: list["EpochMetric"], config: dict) -> str:
         task_names = sorted(list(set(e.task_name for e in epoch_data)))
 
+        is_grok = "mod_addition" in task_names
+
+        if is_grok:
+            return self._generate_grok_report(epoch_data, config)
+
         headers = ["Epoch", "Task", "Train Loss", "Min Loss", "Min Step", "LR", "PI", "Eff. Gamma", "Entropy", "Grad Norm", "Epoch Time (s)", "Peak GPU Mem (MB)"]
 
-        # Add diagnostic headers
         diag_keys: set[str] = set()
         for epoch in epoch_data:
             if epoch.diagnostics:
@@ -121,6 +125,89 @@ class MDLogger(Callback):
 ## Performance Summary
 - **Best Validation Metrics**: {best_metric_summary}
 - **Final Validation Metrics**: {final_metrics_summary}
+"""
+        return report
+
+    def _generate_grok_report(self, epoch_data: list["EpochMetric"], config: dict) -> str:
+        grok_epochs = [e for e in epoch_data if e.task_name == "mod_addition"]
+        grok_epochs.sort(key=lambda x: x.global_epoch)
+
+        milestone_defs = [
+            ("train_loss_lt_0_5", "Train Loss < 0.5   (Fitting)"),
+            ("train_loss_lt_0_1", "Train Loss < 0.1   (Overfit)"),
+            ("train_acc_gt_99", "Train Acc > 99%    (Memorization)"),
+            ("eval_acc_gt_10", "Eval Acc > 10%     (Early Signal)"),
+            ("eval_acc_gt_50", "Eval Acc > 50%     (Above Chance)"),
+            ("eval_acc_gt_80", "Eval Acc > 80%     (Strong Signal)"),
+            ("eval_acc_gt_90", "Eval Acc > 90%     (Grokking)"),
+            ("eval_acc_gt_95", "Eval Acc > 95%     (Near Convergence)"),
+            ("eval_acc_gt_98", "Eval Acc > 98%     (Convergence)"),
+            ("eval_acc_gt_99", "Eval Acc > 99%     (Full Convergence)"),
+        ]
+
+        milestone_rows = []
+        for key, label in milestone_defs:
+            found = None
+            for e in grok_epochs:
+                if key == "train_loss_lt_0_5" and e.avg_train_loss < 0.5 or key == "train_loss_lt_0_1" and e.avg_train_loss < 0.1 or key == "train_acc_gt_99" and e.task_metrics.metrics.get("train_accuracy", 0) >= 99.0 or key == "eval_acc_gt_10" and e.task_metrics.metrics.get("accuracy", 0) >= 10.0 or key == "eval_acc_gt_50" and e.task_metrics.metrics.get("accuracy", 0) >= 50.0 or key == "eval_acc_gt_80" and e.task_metrics.metrics.get("accuracy", 0) >= 80.0 or key == "eval_acc_gt_90" and e.task_metrics.metrics.get("accuracy", 0) >= 90.0 or key == "eval_acc_gt_95" and e.task_metrics.metrics.get("accuracy", 0) >= 95.0 or key == "eval_acc_gt_98" and e.task_metrics.metrics.get("accuracy", 0) >= 98.0 or key == "eval_acc_gt_99" and e.task_metrics.metrics.get("accuracy", 0) >= 99.0:
+                    found = e
+                    break
+
+            if found is not None:
+                pi_val = found.avg_pi_obj.raw_pi if found.avg_pi_obj is not None else "N/A"
+                gn_val = f"{found.grad_norm:.4f}" if found.grad_norm is not None else "N/A"
+                milestone_rows.append(
+                    f"| {label} | {found.global_epoch + 1} | {found.avg_train_loss:.4f} | "
+                    f"{found.task_metrics.metrics.get('accuracy', 'N/A')} | "
+                    f"{found.task_metrics.metrics.get('train_accuracy', 'N/A')} | "
+                    f"{pi_val} | {gn_val} |"
+                )
+            else:
+                milestone_rows.append(f"| {label} | — | — | — | — | — | — |")
+
+        milestone_table = "\n".join(milestone_rows)
+
+        last_5 = grok_epochs[-5:]
+        snapshot_rows = []
+        for e in last_5:
+            pi_val = e.avg_pi_obj.raw_pi if e.avg_pi_obj is not None else "N/A"
+            gn_val = f"{e.grad_norm:.4f}" if e.grad_norm is not None else "N/A"
+            snapshot_rows.append(
+                f"| {e.global_epoch + 1} | {e.avg_train_loss:.4f} | "
+                f"{e.task_metrics.metrics.get('accuracy', 'N/A')} | "
+                f"{e.task_metrics.metrics.get('train_accuracy', 'N/A')} | "
+                f"{pi_val} | {gn_val} |"
+            )
+        snapshot_content = "\n".join(snapshot_rows)
+
+        best_eval_acc = 0.0
+        best_eval_acc_epoch = 0
+        for e in grok_epochs:
+            acc = e.task_metrics.metrics.get("accuracy", 0)
+            if isinstance(acc, (int, float)) and acc > best_eval_acc:
+                best_eval_acc = acc
+                best_eval_acc_epoch = e.global_epoch + 1
+
+        report = f"""# ARS-Bench Experiment Report — Grokking Milestone Mode
+
+## Configuration Summary
+```json
+{json.dumps(config, indent=2)}
+```
+
+## Grokking Milestones
+| Milestone | Epoch | Train Loss | Eval Acc | Train Acc | PI | Grad Norm |
+|-----------|-------|------------|----------|-----------|----|-----------|
+{milestone_table}
+
+## Performance Summary
+- **Best Eval Acc**: {best_eval_acc:.2f}% at Epoch {best_eval_acc_epoch}
+- **Total Epochs**: {len(grok_epochs)}
+
+## Last 5 Epochs (Raw Snapshot)
+| Epoch | Train Loss | Eval Acc | Train Acc | PI | Grad Norm |
+|-------|------------|----------|-----------|----|-----------|
+{snapshot_content}
 """
         return report
 
