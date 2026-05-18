@@ -71,6 +71,7 @@ REQ-001-EX: ARS2-Neo/ARS2C 优化器系统是唯一获准包含 Docstring 的源
 1. REQ-001: 脚本即实验 - 所有训练逻辑（数据流、模型初始化、训练循环）必须完全内聚于 `exp/` 目录下的独立脚本中。
 2. REQ-002: SmartOptimizer 驱动 - 必须使用 `optimizer.get_optimizer` 获取 `SmartOptimizer` 实例。
 3. REQ-003: 原子化执行 - 训练循环中必须通过 `smart_opt.step(batch, train_fn)` 执行更新，其中 `train_fn` 负责前向传播与损失计算。`SmartOptimizer` 自动处理闭包、BN 状态保护及二阶梯度逻辑。
+4. 启动命令格式：`python -m exp.<task_name>.train --config <path>`
 
 ## 调试与异常
 

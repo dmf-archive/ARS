@@ -1,0 +1,27 @@
+[experiment]
+tasks = ["wikitext2"]
+seed = 42
+device = "cuda"
+epochs = 10
+
+[model]
+type = "rope"
+vocabulary_size = 40479
+embedding_size = 128
+sequence_length = 128
+num_heads = 4
+num_layers = 2
+rope_theta = 10000.0
+intermediate_size = 256
+tie_word_embeddings = true
+
+[data]
+batch_size = 16
+num_workers = 0
+tokenizer_path = "./data/wikitext2_tokenizer.json"
+
+[optimizer]
+name = "Muon"
+lr = 0.02
+momentum = 0.95
+ns_steps = 5

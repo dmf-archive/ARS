@@ -259,7 +259,9 @@ class ARS2CSAGA(Optimizer):
                         state['c_ortho'] = _zeropower_via_newtonschulz5(_c_flat)
 
                         current_rho = state['rho']
-                        rho_target = _rho_min + (_rho_max - _rho_min) * state.get('alignment', 0.0)
+                        prev_alignment = state.get('alignment_matrix', None)
+                        alignment_val = prev_alignment.mean().item() if prev_alignment is not None else 0.5
+                        rho_target = _rho_min + (_rho_max - _rho_min) * alignment_val
                         new_rho = current_rho + _rho_kappa * (rho_target - current_rho)
                         state['rho'] = max(_rho_min, min(_rho_max, new_rho))
 
@@ -305,22 +307,35 @@ class ARS2CSAGA(Optimizer):
         step = state['step']
         exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
 
-        alignment = state.get('alignment', 0.0)
+        alignment_matrix = state.get('alignment_matrix', None)
         b1_min = state.get('beta1_min', 0.5)
         b1_max = state.get('beta1_max', 0.95)
         b2_min = state.get('beta2_min', 0.9)
         b2_max = state.get('beta2_max', 0.9995)
-        beta1_d = b1_min + (b1_max - b1_min) * alignment
-        beta2_d = b2_min + (b2_max - b2_min) * alignment
 
-        exp_avg.mul_(beta1_d).add_(p.grad, alpha=1 - beta1_d)
-        exp_avg_sq.mul_(beta2_d).addcmul_(p.grad, p.grad, value=1 - beta2_d)
+        if alignment_matrix is not None and p.ndim >= 2:
+            beta1_matrix = b1_min + (b1_max - b1_min) * alignment_matrix
+            beta2_matrix = b2_min + (b2_max - b2_min) * alignment_matrix
 
-        bias_correction1 = 1 - beta1_d ** step
-        bias_correction2 = 1 - beta2_d ** step
+            exp_avg.mul_(beta1_matrix)
+            exp_avg.add_(p.grad * (1 - beta1_matrix))
+            exp_avg_sq.mul_(beta2_matrix)
+            exp_avg_sq.add_(p.grad * p.grad * (1 - beta2_matrix))
 
-        m_hat = exp_avg / bias_correction1
-        v_hat = exp_avg_sq / bias_correction2
+            bias_correction1 = 1 - torch.pow(beta1_matrix, step)
+            bias_correction2 = 1 - torch.pow(beta2_matrix, step)
+
+            m_hat = exp_avg / bias_correction1
+            v_hat = exp_avg_sq / bias_correction2
+        else:
+            exp_avg.mul_(beta1).add_(p.grad, alpha=1 - beta1)
+            exp_avg_sq.mul_(beta2).addcmul_(p.grad, p.grad, value=1 - beta2)
+
+            bias_correction1 = 1 - beta1 ** step
+            bias_correction2 = 1 - beta2 ** step
+
+            m_hat = exp_avg / bias_correction1
+            v_hat = exp_avg_sq / bias_correction2
 
         m_scaled = m_hat / (v_hat.sqrt() + eps)
         energy = m_scaled.norm()
@@ -335,13 +350,22 @@ class ARS2CSAGA(Optimizer):
         if 'c_ortho' in state:
             c_ortho = state.pop('c_ortho')
             c_magnitude = state.pop('c_magnitude', 0.0)
-            s_flat = s_ortho.view(s_ortho.size(0), -1) if s_ortho.ndim >= 2 else s_ortho
-            s_unit = s_flat / (s_flat.norm() + 1e-12)
-            alignment_raw = float((c_ortho * s_unit).sum().abs())
-            mag_gate = float(torch.sigmoid(torch.tensor(c_magnitude, device=p.device)))
-            state['alignment_raw'] = alignment_raw
             state['c_magnitude'] = c_magnitude
-            state['alignment'] = alignment_raw * mag_gate
+
+            if p.ndim >= 2:
+                c_reshaped = c_ortho.view(p.shape) if c_ortho.numel() == p.numel() else c_ortho
+
+                c_row_norm = c_reshaped / (c_reshaped.norm(dim=1, keepdim=True) + 1e-12)
+                s_row_norm = s_ortho / (s_ortho.norm(dim=1, keepdim=True) + 1e-12)
+                row_alignment = (c_row_norm * s_row_norm).sum(dim=1, keepdim=True)
+                row_alignment = (row_alignment + 1) / 2
+
+                c_col_norm = c_reshaped / (c_reshaped.norm(dim=0, keepdim=True) + 1e-12)
+                s_col_norm = s_ortho / (s_ortho.norm(dim=0, keepdim=True) + 1e-12)
+                col_alignment = (c_col_norm * s_col_norm).sum(dim=0, keepdim=True)
+                col_alignment = (col_alignment + 1) / 2
+
+                state['alignment_matrix'] = torch.sqrt(row_alignment * col_alignment)
 
         update = energy * s_ortho
 
@@ -437,28 +461,31 @@ class ARS2CSAGA(Optimizer):
             'effective_k': total_steps / max(1, sync_steps),
         }
 
-        alignments = []
+        alignment_means = []
         beta1s = []
         beta2s = []
         rhos = []
         for group in self.param_groups:
             for p in group['params']:
                 state = self.state.get(p, {})
-                if 'alignment' not in state:
+                if 'alignment_matrix' not in state:
                     continue
-                a = state['alignment']
-                alignments.append(a)
+                a_matrix = state['alignment_matrix']
+                a_mean = a_matrix.mean().item()
+                alignment_means.append(a_mean)
                 b1_min = state.get('beta1_min', 0.5)
                 b1_max = state.get('beta1_max', 0.95)
                 b2_min = state.get('beta2_min', 0.9)
                 b2_max = state.get('beta2_max', 0.9995)
-                beta1s.append(b1_min + (b1_max - b1_min) * a)
-                beta2s.append(b2_min + (b2_max - b2_min) * a)
+                beta1_matrix = b1_min + (b1_max - b1_min) * a_matrix
+                beta2_matrix = b2_min + (b2_max - b2_min) * a_matrix
+                beta1s.append(beta1_matrix.mean().item())
+                beta2s.append(beta2_matrix.mean().item())
                 if 'rho' in state:
                     rhos.append(state['rho'])
 
-        if alignments:
-            d['alignment'] = sum(alignments) / len(alignments)
+        if alignment_means:
+            d['alignment'] = sum(alignment_means) / len(alignment_means)
             d['beta1_dynamic'] = sum(beta1s) / len(beta1s)
             d['beta2_dynamic'] = sum(beta2s) / len(beta2s)
         else:
