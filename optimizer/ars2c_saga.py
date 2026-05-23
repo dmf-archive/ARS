@@ -1,3 +1,4 @@
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -75,12 +76,20 @@ class ARS2CSAGA(Optimizer):
        filtering; low alignment → fast adaptation.
 
     3. **Sharpening-Aware Dynamic Rho** (SAGA): The SAM perturbation radius rho
-       is no longer a fixed hyperparameter but a per-parameter dynamic state
-       modulated by alignment. When alignment is high (update direction aligns
-       with Christoffel curvature), rho regresses toward its steady-state mu
-       (trust NGD). When alignment is low (curvature structure absent or
-       chaotic), rho increases to apply flatness pressure and expose hidden
-       structure — the mechanism underlying spontaneous Grokking.
+       is modulated by two orthogonal geometric signals extracted from the
+       Christoffel matrix: curvature intensity ‖C‖_F and direction alignment
+       cos_sim = |⟨c_ortho, s_unit⟩|. These combine multiplicatively:
+
+         ν_t = β_ema · ν_{t-1} + (1 − β_ema) · c_norm
+         f_c = 1 + log(1 + c_norm / ν_t)
+         f_a = 1 + (1 − cos_sim)
+         ρ_target = ρ_min · f_c · f_a
+
+       The update is asymmetric: fast expansion via rho_eta when ρ_target > ρ,
+       slow contraction via rho_kappa when ρ_target < ρ. This zero-new-hyperparam
+       design replaces the old linear ρ = ρ_min + (ρ_max − ρ_min) · alignment
+       mapping, which failed to reach physically meaningful perturbation scales
+       under persistently low alignment.
 
     The optimizer employs a dual-track design: 2D+ parameters are routed to
     the full SAGA track (orthogonalized update + dynamic beta + dynamic rho),
@@ -99,14 +108,14 @@ class ARS2CSAGA(Optimizer):
         k: SAM mode; k=0 disables SAM, k=1 synchronous, k>1 delayed, default 1.
         alpha: base shear-force injection strength, default 0.1.
         adaptive_sync: enable AGA sync mode, default False.
-        adaptive_beta: EMA coefficient for AGA geometric noise tracking,
-            default 0.99.
+        adaptive_beta: EMA coefficient for AGA geometric noise tracking and
+            SAGA curvature baseline ν, default 0.99.
         adaptive_lambda: AGA sensitivity for dynamic threshold, default 2.0.
         adaptive_gamma: AGA exponent for alpha amplification, default 2.0.
         beta1_min, beta1_max: dynamic range for beta1, default (0.5, 0.95).
         beta2_min, beta2_max: dynamic range for beta2, default (0.9, 0.9995).
-        rho_kappa: regression rate toward rho_target, default 0.01.
-        rho_eta: riseup rate when alignment is low, default 0.1.
+        rho_kappa: slow contraction rate for rho, default 0.01.
+        rho_eta: fast expansion rate for rho, default 0.1.
         rho_min: lower bound for dynamic rho, default 0.01.
         rho_max: upper bound for dynamic rho, default 1.0.
     """
@@ -255,14 +264,28 @@ class ARS2CSAGA(Optimizer):
                         _g_hat = _g_base / (_v_hat.sqrt() + _eps)
                         _C = _delta_g / (state['rho'] * _g_hat.abs() + _eps)
                         _c_flat = _C.view(_C.size(0), -1)
-                        state['c_magnitude'] = float(_c_flat.norm())
+                        c_norm = float(_c_flat.norm())
+                        state['c_magnitude'] = c_norm
                         state['c_ortho'] = _zeropower_via_newtonschulz5(_c_flat)
 
+                        nu = state.get('nu', c_norm)
+                        _beta_ema = group.get('adaptive_beta', 0.99)
+                        nu = _beta_ema * nu + (1 - _beta_ema) * c_norm
+                        state['nu'] = nu
+
+                        f_c = 1.0 + math.log(1.0 + c_norm / (nu + _eps))
+
+                        cos_sim = state.get('cos_sim', 0.5)
+                        f_a = 1.0 + (1.0 - cos_sim)
+
+                        rho_target = _rho_min * f_c * f_a
+                        rho_target = max(_rho_min, min(_rho_max, rho_target))
+
                         current_rho = state['rho']
-                        prev_alignment = state.get('alignment_matrix', None)
-                        alignment_val = prev_alignment.mean().item() if prev_alignment is not None else 0.5
-                        rho_target = _rho_min + (_rho_max - _rho_min) * alignment_val
-                        new_rho = current_rho + _rho_kappa * (rho_target - current_rho)
+                        if rho_target > current_rho:
+                            new_rho = current_rho + _rho_eta * (rho_target - current_rho)
+                        else:
+                            new_rho = current_rho + _rho_kappa * (rho_target - current_rho)
                         state['rho'] = max(_rho_min, min(_rho_max, new_rho))
 
         elif is_sam_enabled and not is_sync_step:
@@ -351,6 +374,11 @@ class ARS2CSAGA(Optimizer):
             c_ortho = state.pop('c_ortho')
             c_magnitude = state.pop('c_magnitude', 0.0)
             state['c_magnitude'] = c_magnitude
+
+            s_flat = s_ortho.view(s_ortho.size(0), -1)
+            s_unit = s_flat / (s_flat.norm() + 1e-12)
+            cos_sim = float((c_ortho * s_unit).sum().abs())
+            state['cos_sim'] = cos_sim
 
             if p.ndim >= 2:
                 c_reshaped = c_ortho.view(p.shape) if c_ortho.numel() == p.numel() else c_ortho
@@ -465,6 +493,9 @@ class ARS2CSAGA(Optimizer):
         beta1s = []
         beta2s = []
         rhos = []
+        cos_sims = []
+        c_norms = []
+        nus = []
         for group in self.param_groups:
             for p in group['params']:
                 state = self.state.get(p, {})
@@ -483,6 +514,12 @@ class ARS2CSAGA(Optimizer):
                 beta2s.append(beta2_matrix.mean().item())
                 if 'rho' in state:
                     rhos.append(state['rho'])
+                if 'cos_sim' in state:
+                    cos_sims.append(state['cos_sim'])
+                if 'c_magnitude' in state:
+                    c_norms.append(state['c_magnitude'])
+                if 'nu' in state:
+                    nus.append(state['nu'])
 
         if alignment_means:
             d['alignment'] = sum(alignment_means) / len(alignment_means)
@@ -503,6 +540,29 @@ class ARS2CSAGA(Optimizer):
             d['rho_std'] = 0.0
             d['rho_min_obs'] = self.defaults.get('rho', 0.1)
             d['rho_max_obs'] = self.defaults.get('rho', 0.1)
+
+        if cos_sims:
+            d['cos_sim_mean'] = sum(cos_sims) / len(cos_sims)
+            d['cos_sim_min'] = min(cos_sims)
+            d['cos_sim_max'] = max(cos_sims)
+        else:
+            d['cos_sim_mean'] = 0.0
+            d['cos_sim_min'] = 0.0
+            d['cos_sim_max'] = 0.0
+
+        if c_norms:
+            d['c_norm_mean'] = sum(c_norms) / len(c_norms)
+            d['c_norm_min'] = min(c_norms)
+            d['c_norm_max'] = max(c_norms)
+        else:
+            d['c_norm_mean'] = 0.0
+            d['c_norm_min'] = 0.0
+            d['c_norm_max'] = 0.0
+
+        if nus:
+            d['nu_mean'] = sum(nus) / len(nus)
+        else:
+            d['nu_mean'] = 0.0
 
         return d
 
