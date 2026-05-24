@@ -5,7 +5,7 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.7+-orange.svg)](https://pytorch.org)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/dmf-archive/ARS)
 
-> This project is a research framework focused on second-order optimization dynamics and information geometry. It realizes an efficient gliding optimization paradigm on Riemannian manifolds through the principle of Energy-Geometry Decoupling.
+> This project is a research framework focused on second-order optimization dynamics and information geometry.
 
 ## 1. Theoretical Foundation: From Diagonal Fisher to Full-rank NGD
 
@@ -41,37 +41,44 @@ ARS2-Neo decomposes the optimization process into two independent operators:
 
 Experimental Setup: Qwen3 (RoPE, 3-layer), Context 255. Aimed at probing optimization stability on ill-conditioned curvature manifolds.
 
-| Optimizer | Best PPL | Last PPL | Dynamic Characteristics | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| **AdamW** | 116.46 | 213.52 | Standard Euclidean Baseline | Slow convergence, late-stage overfitting |
-| **Muon** | 111.35 | 475.65 | Spectral Constrained Convergence | Lacks adaptive energy, late-stage collapse |
-| **ARS2-Neo (Base)** | 96.10 | 3055.47 | **Overfitting** | Rapidly drops into sharp minima, generalization collapse |
-| **ARS2-Neo (Sync)** | **90.69** | **330.85** | **Optimal Generalization Ceiling** | `ρ=0.3`, successfully suppresses overfitting |
-| **ARS2-Neo (AGA)** | 93.23 | 414.83 | Trade-off between Efficiency & Stability | `λ=0.5`, Adaptive Geometric Awareness |
+| Optimizer | Best PPL | Final PPL | Best Eval Loss | Final Eval Loss | Final Train Loss | Avg Time | PPL Gap |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **AdamW** | 116.46 | 213.52 | 4.76 | 5.36 | 2.9740 | 314s | +97.06 |
+| **Muon** | 111.35 | 475.65 | 4.71 | 6.16 | 2.2938 | 445s | +364.30 |
+| **ARS2-Neo (Base)** | 96.10 | 3055.47 | 4.57 | 8.02 | 0.9123 | 425s | +2959.37 |
+| **ARS2-Neo (Sync)** | **90.69** | **330.85** | **4.51** | 5.80 | 1.6100 | 784s | +240.16 |
+| **ARS2-Neo (AGA)** | 93.23 | 414.83 | 4.54 | 6.03 | 1.5906 | 546s | +321.60 |
 
 ### 3.2 CIFAR-10 Visual Classification
 
 Experimental Setup: ResNet-18, Batch Size 256.
 
-| Optimizer | Best Acc | Final Acc | Note |
-| :--- | :--- | :--- | :--- |
-| **ARS2-Neo (Sync)** | **95.87%** | **95.73%** | **SOTA**. Rapid convergence in 60 epochs. |
-| **AdamW** | 94.60% | 94.47% | Standard Baseline. |
-| **Muon** | 93.76% | 93.69% | Pure geometric optimization, limited ceiling. |
+| Optimizer | Best Acc | Final Acc | Final Train Loss | Best Eval Loss | Final Eval Loss | Avg Epoch Time | Gen Gap |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **ARS2-Neo (Sync, ρ=0.1)** | **95.87%** | **95.73%** | 0.0347 | 0.1500 | 0.1500 | 104s | +0.14 |
+| **ARS2-Neo (Base)** | 95.58% | 95.52% | 0.0181 | 0.2400 | 0.2500 | 71s | +0.06 |
+| **ARS2-Neo (AGA, λ=2.0)** | 94.10% | 94.09% | 0.1251 | 0.1800 | 0.1800 | 90s | +0.01 |
+| **AdamW** | 94.60% | 94.47% | 0.0451 | 0.2500 | 0.2700 | 58s | +0.13 |
+| **Muon** | 93.76% | 93.69% | 0.0267 | 0.2900 | 0.2900 | 75s* | +0.07 |
+
+> *Muon CIFAR-10 avg epoch time includes a single outlier at 35331s (~9.8hrs); typical epochs are ~75s.*
 
 ### 3.3 Grokking Phenomenon Acceleration
 
 To verify the dynamic characteristics of the optimizer during generalization phase transitions, we compared the performance of various optimizers on a modular addition task (`p=113`, `train_frac=0.3`).
 
-| Optimizer | Fitting (Epoch) | Grokking (Epoch) | Convergence (Epoch) | Best Eval Acc | Status |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **AdamW** | 113 | >600 | N/A | 15.65% | Failed to grok; stuck in overfitting basin. |
-| **Muon** | 22 | >347 | N/A | 36.83% | Fast fitting but no generalization; spectral collapse without energy adaptation. |
-| **ARS2-Neo (Base)** | 11 | 239 | 290 | 99.53% | Energy-Geometry Decoupling enables phase transition. |
-| **ARS2-Neo (AGA)** | 12 | **77** | **116** | **99.60%** | **Optimal Dynamics**. AGA accelerates grokking by 3× vs Base. |
-| **ARS2C (AGA)** | 13 | 93 | 137 | 99.06% | Curvature-aware dynamic beta. |
+| Optimizer | Fitting (Ep) | Grokking (Ep) | Converge (Ep) | Best Eval Acc |
+| :--- | :--- | :--- | :--- | :--- |
+| **AdamW** | 113 | >600 | N/A | 15.65% |
+| **Muon** | 22 | >347 | N/A | 36.83% |
+| **ARS2-Neo (Base)** | 11 | 239 | 290 | 99.53% |
+| **ARS2-Neo (AGA)** | 12 | **77** | **116** | **99.60%** |
+| **ARS2C (AGA)** | 13 | 93 | 137 | 99.06% |
+| **ARS2C (Scaler) (AGA)** | 13 | 75 | 172 | 99.03% |
+| **ARS2D (Base)** | 11 | 237 | 264 | 99.05% |
+| **ARS2D (AGA)** | 12 | **60** | **112** | **99.00%** |
 
-**Core Insight**: ARS2-Neo (AGA) accelerates the occurrence of Grokking by **over 7.8×** compared to AdamW, strongly proving that Energy-Geometry Decoupling avoids ineffective wandering in overfitting basins, directly traversing high-dimensional canyons to reach generalized solutions.
+**Core Insight**: Energy-Geometry Decoupling avoids ineffective wandering in overfitting basins, directly traversing high-dimensional canyons to reach generalized solutions. ARS2D (AGA) achieves grokking in 60 epochs and convergence in 112 epochs, the fastest among all variants. Muon and AdamW fail to grok within 600 epochs.
 
 ## 4. Quick Start
 

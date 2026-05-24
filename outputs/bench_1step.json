@@ -1,0 +1,110 @@
+[
+  {
+    "optimizer_name": "AdamW",
+    "params_count": 1838346,
+    "total_params_bytes": 7353384,
+    "cpu_time_ns": 53800500.0,
+    "gpu_kernel_time_ms": 48.26055908203125,
+    "cuda_memory_before_mb": 7.01318359375,
+    "cuda_memory_after_mb": 39.24267578125,
+    "sync_steps": 1,
+    "is_jit_compiled": true,
+    "kernel_breakdown": {
+      "Newton-Schulz": 0.354,
+      "AdamW": 0.149,
+      "SAM Forward": 0.0,
+      "SAM Backward": 0.0,
+      "Gradient Prewhitening": 0.0
+    }
+  },
+  {
+    "optimizer_name": "Muon",
+    "params_count": 1838346,
+    "total_params_bytes": 7353384,
+    "cpu_time_ns": 93405370.0,
+    "gpu_kernel_time_ms": 93.36409912109374,
+    "cuda_memory_before_mb": 23.26318359375,
+    "cuda_memory_after_mb": 32.25732421875,
+    "sync_steps": 1,
+    "is_jit_compiled": true,
+    "kernel_breakdown": {
+      "Newton-Schulz": 0.374,
+      "AdamW": 0.027,
+      "SAM Forward": 0.0,
+      "SAM Backward": 0.0,
+      "Gradient Prewhitening": 0.0
+    }
+  },
+  {
+    "optimizer_name": "ARS2-Neo (Base)",
+    "params_count": 1838346,
+    "total_params_bytes": 7353384,
+    "cpu_time_ns": 176505300.0,
+    "gpu_kernel_time_ms": 176.42615966796876,
+    "cuda_memory_before_mb": 23.26318359375,
+    "cuda_memory_after_mb": 51.31396484375,
+    "sync_steps": 1,
+    "is_jit_compiled": true,
+    "kernel_breakdown": {
+      "Newton-Schulz": 0.253,
+      "AdamW": 0.016,
+      "SAM Forward": 0.0,
+      "SAM Backward": 0.0,
+      "Gradient Prewhitening": 0.0
+    }
+  },
+  {
+    "optimizer_name": "ARS2-Neo (AGA)",
+    "params_count": 1838346,
+    "total_params_bytes": 7353384,
+    "cpu_time_ns": 105911970.0,
+    "gpu_kernel_time_ms": 105.7956298828125,
+    "cuda_memory_before_mb": 23.26318359375,
+    "cuda_memory_after_mb": 58.32666015625,
+    "sync_steps": 1,
+    "is_jit_compiled": true,
+    "kernel_breakdown": {
+      "Newton-Schulz": 0.284,
+      "AdamW": 0.017,
+      "SAM Forward": 0.0,
+      "SAM Backward": 0.0,
+      "Gradient Prewhitening": 0.0
+    }
+  },
+  {
+    "optimizer_name": "ARS2C (Base)",
+    "params_count": 1838346,
+    "total_params_bytes": 7353384,
+    "cpu_time_ns": 340861190.0,
+    "gpu_kernel_time_ms": 340.7675537109375,
+    "cuda_memory_before_mb": 23.26318359375,
+    "cuda_memory_after_mb": 58.30029296875,
+    "sync_steps": 1,
+    "is_jit_compiled": true,
+    "kernel_breakdown": {
+      "Newton-Schulz": 0.52,
+      "AdamW": 0.051,
+      "SAM Forward": 0.0,
+      "SAM Backward": 0.0,
+      "Gradient Prewhitening": 0.0
+    }
+  },
+  {
+    "optimizer_name": "ARS2D (Base)",
+    "params_count": 1838346,
+    "total_params_bytes": 7353384,
+    "cpu_time_ns": 76832090.0,
+    "gpu_kernel_time_ms": 76.67871704101563,
+    "cuda_memory_before_mb": 23.26318359375,
+    "cuda_memory_after_mb": 51.31396484375,
+    "sync_steps": 1,
+    "is_jit_compiled": true,
+    "kernel_breakdown": {
+      "Newton-Schulz": 0.452,
+      "AdamW": 0.042,
+      "SAM Forward": 0.0,
+      "SAM Backward": 0.0,
+      "Gradient Prewhitening": 0.0
+    }
+  }
+]
