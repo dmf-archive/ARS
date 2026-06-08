@@ -21,7 +21,7 @@ class MDLogger(Callback):
         pass
 
     def on_epoch_end(self, context: "TrainerContext"):
-        self._write_report(context)
+        self._append_epoch_row(context)
 
     def on_step_begin(self, context: "TrainerContext"):
         pass
@@ -34,6 +34,51 @@ class MDLogger(Callback):
 
     def load(self, context: "TrainerContext") -> bool:
         return False
+
+    def _is_grok(self, context: "TrainerContext") -> bool:
+        tasks = context.config.get("experiment", {}).get("tasks", [])
+        return "mod_addition" in tasks
+
+    def _append_epoch_row(self, context: "TrainerContext"):
+        epoch_history = context.store.get_flat_epoch_history()
+        if not epoch_history:
+            return
+        latest = epoch_history[-1]
+
+        report_path = context.output_dir / "summary.md"
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+
+        is_grok = self._is_grok(context)
+        first_write = not report_path.exists() or report_path.stat().st_size == 0
+
+        if is_grok:
+            if first_write:
+                header = "| Epoch | Train Loss | Eval Acc | Train Acc | PI | Grad Norm |\n|-------|------------|----------|-----------|----|-----------|\n"
+                with open(report_path, 'w') as f:
+                    f.write(header)
+            pi_val = latest.avg_pi_obj.raw_pi if latest.avg_pi_obj is not None else "N/A"
+            gn_val = f"{latest.grad_norm:.4f}" if latest.grad_norm is not None else "N/A"
+            row = (
+                f"| {latest.global_epoch + 1} | {latest.avg_train_loss:.4f} | "
+                f"{latest.task_metrics.metrics.get('accuracy', 'N/A')} | "
+                f"{latest.task_metrics.metrics.get('train_accuracy', 'N/A')} | "
+                f"{pi_val} | {gn_val} |\n"
+            )
+        else:
+            if first_write:
+                header = "| Epoch | Task | Train Loss | LR | PI | Grad Norm | Epoch Time (s) |\n|-------|------|------------|------|------|-----------|----------------|\n"
+                with open(report_path, 'w') as f:
+                    f.write(header)
+            pi_val = f"{latest.avg_pi_obj.raw_pi:.3f}" if latest.avg_pi_obj is not None else "N/A"
+            gn_val = f"{latest.grad_norm:.4f}" if latest.grad_norm is not None else "N/A"
+            et_val = f"{latest.epoch_time_s:.2f}" if latest.epoch_time_s is not None else "N/A"
+            row = (
+                f"| {latest.global_epoch + 1} | {latest.task_name} | {latest.avg_train_loss:.4f} | "
+                f"{latest.learning_rate:.6f} | {pi_val} | {gn_val} | {et_val} |\n"
+            )
+
+        with open(report_path, 'a') as f:
+            f.write(row)
 
     def _write_report(self, context: "TrainerContext"):
         epoch_history = context.store.get_flat_epoch_history()

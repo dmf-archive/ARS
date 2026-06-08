@@ -19,10 +19,12 @@ if TYPE_CHECKING:
 
 
 class ConsoleLogger(Callback):
-    def __init__(self):
+    def __init__(self, refresh_interval: int = 10):
         self.console = Console()
         self.progress: Progress | None = None
         self.step_task_id: TaskID | None = None
+        self.refresh_interval = refresh_interval
+        self._step_counter = 0
 
     def on_train_end(self, context: "TrainerContext"):
         if self.progress:
@@ -50,16 +52,27 @@ class ConsoleLogger(Callback):
             console=self.console
         )
         self.progress.start()
+        self._step_counter = 0
+        self._last_refreshed = 0
 
     def on_epoch_begin(self, context: "TrainerContext"):
         if not self.progress:
             raise RuntimeError("Progress bar not initialized. `on_train_begin` must be called first.")
-        self.step_task_id = self.progress.add_task(f"Epoch {context.current_epoch + 1}", total=context.total_steps_in_epoch)
+        total = context.total_steps_in_epoch
+        self.step_task_id = self.progress.add_task(
+            f"Epoch {context.current_epoch + 1}", total=total
+        )
+        self._step_counter = 0
+        self._last_refreshed = 0
 
     def on_step_end(self, context: "TrainerContext"):
         if not self.progress or self.step_task_id is None:
             raise RuntimeError("Progress bar not initialized for step. `on_epoch_begin` must be called first.")
-        self.progress.update(self.step_task_id, advance=1)
+        self._step_counter += 1
+        self.progress.update(self.step_task_id, completed=self._step_counter, refresh=False)
+        if self._step_counter - self._last_refreshed >= self.refresh_interval:
+            self.progress.refresh()
+            self._last_refreshed = self._step_counter
 
     def on_epoch_end(self, context: "TrainerContext"):
         if self.progress and self.step_task_id is not None:

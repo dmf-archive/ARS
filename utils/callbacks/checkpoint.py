@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -10,7 +11,7 @@ if TYPE_CHECKING:
 
 
 class CheckpointSaver(Callback):
-    def __init__(self, max_checkpoints: int = 3):
+    def __init__(self, max_checkpoints: int = 1):
         self.max_checkpoints = max_checkpoints
         self.checkpoint_files: list[Path] = []
 
@@ -52,12 +53,15 @@ class CheckpointSaver(Callback):
                 oldest_checkpoint.unlink()
 
         latest_path = context.output_dir / "latest_checkpoint.pt"
-        torch.save(checkpoint, latest_path)
+        shutil.copy2(checkpoint_path, latest_path)
 
     def load(self, context: "TrainerContext") -> bool:
         checkpoint_path = context.output_dir / "latest_checkpoint.pt"
         if not checkpoint_path.exists():
-            return False
+            candidates = sorted(context.output_dir.glob("checkpoint_epoch_*.pt"))
+            if not candidates:
+                return False
+            checkpoint_path = candidates[-1]
 
         checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
 
