@@ -2,7 +2,7 @@
 Extract all experimental metrics from summary.md files
 and produce a consolidated report.
 """
-import json, re, sys
+import re
 from pathlib import Path
 from typing import Any
 

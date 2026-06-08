@@ -420,36 +420,19 @@ class ARS2DCSAGA(Optimizer):
         if p.ndim == 4:
             s_ortho = s_ortho.view(original_shape)
 
-        if is_christoffel and 'c_ortho' in state:
+        # Unified curvature block: pop c_ortho once, serve both Christoffel and SAGA
+        if (is_christoffel or is_saga) and 'c_ortho' in state:
             c_ortho = state.pop('c_ortho')
             c_magnitude = state.pop('c_magnitude', 0.0)
             state['c_magnitude'] = c_magnitude
 
-            if p.ndim >= 2:
-                c_reshaped = c_ortho.view(p.shape) if c_ortho.numel() == p.numel() else c_ortho
-
-                c_row_norm = c_reshaped / (c_reshaped.norm(dim=1, keepdim=True) + 1e-12)
-                s_row_norm = s_ortho / (s_ortho.norm(dim=1, keepdim=True) + 1e-12)
-                row_alignment = (c_row_norm * s_row_norm).sum(dim=1, keepdim=True)
-                row_alignment = (row_alignment + 1) / 2
-
-                c_col_norm = c_reshaped / (c_reshaped.norm(dim=0, keepdim=True) + 1e-12)
-                s_col_norm = s_ortho / (s_ortho.norm(dim=0, keepdim=True) + 1e-12)
-                col_alignment = (c_col_norm * s_col_norm).sum(dim=0, keepdim=True)
-                col_alignment = (col_alignment + 1) / 2
-
-                state['alignment_matrix'] = torch.sqrt(row_alignment * col_alignment)
-
-        if is_saga and 'c_ortho' in state:
-            c_ortho = state.pop('c_ortho')
-            c_magnitude = state.pop('c_magnitude', 0.0)
-            state['c_magnitude'] = c_magnitude
-
+            # SAGA: cos_sim always derived from c_ortho
             s_flat = s_ortho.view(s_ortho.size(0), -1)
             s_unit = s_flat / (s_flat.norm() + 1e-12)
             cos_sim = float((c_ortho * s_unit).sum().abs())
             state['cos_sim'] = cos_sim
 
+            # Christoffel: alignment matrix for 2D+ params
             if is_christoffel and p.ndim >= 2:
                 c_reshaped = c_ortho.view(p.shape) if c_ortho.numel() == p.numel() else c_ortho
 
