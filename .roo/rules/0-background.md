@@ -55,7 +55,7 @@
 - 05-15 — 实验笔记：隐式 MDL 假设与 Adadelta 动力学——RDS/PISD/PLSD 优先级骤降 — 理论/工程
 - 05-16 — ARS2C 优化器实现 — 工程
 - 05-21 — `Web://Reflect` v2.10.3 — 叙事
-- 05-23 — ARS2D 双边正交化 + SAGA 动态 ρ 实现 — 工程
+- 05-23 — ARS2D 双边正交化 + AR-GSAM 动态 ρ 实现 — 工程
 
 ## 基石世界观设定：Web://Reflect
 
@@ -116,7 +116,7 @@ IPWT 的核心难点在于 Ω_t 的直接计算在工程上不可得，其涉及
 - `IPWT/README.md` — Theory / Preprint — 已发布 v2.0.0-stable — 起始 2025-06 — 定义 Ω/Syn/PI 与 WSI 的形式化语言，整个研究计划的科学骨架
 - `OmegaID/README.md` — SDK — 维护态 — 起始 2025-06 — 基于 CuPy 的高性能 ΦID 计算工具，用于量化神经网络中的协同信息
 - `SigmaPI/README.md` — SDK — 占位 — 起始 2025-06 — 预测完整性指标计算与训练时观测的工程实现
-- `ARS/README_CN.md` — Research Framework — 活跃核心 — 起始 2025-11 — 优化器实验室，实现 ARS2-Neo/ARS2C/ARS2D/SAGA 及能量-几何解耦更新机制
+- `ARS/README_CN.md` — Research Framework — 活跃核心 — 起始 2025-11 — 优化器实验室，实现 ARS2-Neo/ARS2C/ARS2D/AR-GSAM 及能量-几何解耦更新机制
 - `Tiny-Ouroboros/.roo/rules/0-background.md` — Research Framework — 暂停 — 起始 2025-07 — 原 Tiny-ONN，专注稀疏激活与自组织结构，当前优先级已转移至 ARS
 - `mental-sync-cli/README.md` — Engineering Tool — 维护态 — 起始 — — 智能体运行时环境，负责工具协议整合与安全拦截
 - `OSPU/README_ZH.md` — PoC — 早期 — 起始 — — 基于 FHE 的状态机，为数字主体提供加密审计与根信任
@@ -141,25 +141,25 @@ RMSuon (2025-11)          # 正交化原始动量
        └─ ARS2-Neo (2026-01)  # +SAM 平坦度约束
             ├─ ARS2C (2026-05)   # +Christoffel 动态 β
             ├─ ARS2D (2026-05)   # +双边正交化（行列双等距）
-            └─ SAGA (2026-05)    # +曲率对齐动态 ρ
-                 └─ ARS2DC-SAGA  # 完整体（待验证）
+            └─ AR-GSAM (2026-05)    # +曲率对齐动态 ρ
+                 └─ ARS2DC-AR-GSAM  # 完整体（待验证）
 ```
 
 核心设计文档：
 
 - `ARS/.roo/rules/ARS.md` — 基础能量-几何解耦更新律
-- `ARS/.roo/rules/ARS2.md` — SAM 平坦度约束与 AGA 自适应同步
+- `ARS/.roo/rules/ARS2.md` — SAM 平坦度约束与 A-GSAM 自适应同步
 - `ARS/.roo/rules/ARS2C.md` — Christoffel 符号驱动的动态 β 优化
 - `ARS/.roo/rules/ARS2D.md` — 双边正交化（理论完成，实现已编码）
-- `ARS/.roo/rules/SAGA.md` — 曲率对齐动态 ρ 调制（New SAGA，实现已编码）
+- `ARS/.roo/rules/AR-GSAM.md` — 曲率对齐动态 ρ 调制（New AR-GSAM，实现已编码）
 
 实验成果：
 
 - CIFAR-10 (ResNet-18) — ARS2-Neo Sync (ρ=0.1) — 95.87% Acc
 - Wikitext-2 (Qwen3, 3-layer) — ARS2-Neo Sync — 90.69 PPL
-- Grokking (Modular Addition) — ARS2D AGA — 99.00% @ 112 epoch
+- Grokking (Modular Addition) — ARS2D A-GSAM — 99.00% @ 112 epoch
 
-理论意义：ARS2DC-SAGA 是最小作用量原理/拉格朗日定理在数字优化中的离散实现。其能量-几何解耦 + 动态 β/ρ 机制，使优化器沿 Fisher 信息流形上的测地线演化，每一步更新都在隐式执行 MDL（最小描述长度）先验。
+理论意义：ARS2DC-AR-GSAM 是最小作用量原理/拉格朗日定理在数字优化中的离散实现。其能量-几何解耦 + 动态 β/ρ 机制，使优化器沿 Fisher 信息流形上的测地线演化，每一步更新都在隐式执行 MDL（最小描述长度）先验。
 
 ### 持续学习实验场：Tiny-Ouroboros（暂停中）
 

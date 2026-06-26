@@ -28,10 +28,10 @@ class ARS2C(ARS2Neo):
     - rho: SAM perturbation radius, default 0.1.
     - k: SAM mode; k=0 disables SAM, k=1 synchronous, k>1 delayed, default 1.
     - alpha: base shear-force injection strength, default 0.1.
-    - adaptive_sync: enable AGA sync mode, default False.
-    - adaptive_beta: EMA coefficient for AGA, default 0.99.
-    - adaptive_lambda: AGA sensitivity, default 2.0.
-    - adaptive_gamma: AGA exponent, default 2.0.
+    - adaptive_sync: enable A-GSAM sync mode, default False.
+    - adaptive_beta: EMA coefficient for A-GSAM, default 0.99.
+    - adaptive_lambda: A-GSAM sensitivity, default 2.0.
+    - adaptive_gamma: A-GSAM exponent, default 2.0.
     - beta1_min, beta1_max: dynamic range for beta1, default (0.5, 0.9995).
     - beta2_min, beta2_max: dynamic range for beta2, default (0.5, 0.9995).
     """

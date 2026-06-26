@@ -1,4 +1,4 @@
-# ARS2C-AGA: Gliding Directly Towards Global Optima Along Geodesics of the Loss Landscape
+# ARS: Gliding Directly Towards Global Optima Along Geodesics of the Loss Landscape
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Python](https://img.shields.io/badge/Python-3.12+-green.svg)](https://python.org)
@@ -47,7 +47,7 @@ Experimental Setup: Qwen3 (RoPE, 3-layer), Context 255. Aimed at probing optimiz
 | **Muon** | 111.35 | 475.65 | 4.71 | 6.16 | 2.2938 | 445s | +364.30 |
 | **ARS2-Neo (Base)** | 96.10 | 3055.47 | 4.57 | 8.02 | 0.9123 | 425s | +2959.37 |
 | **ARS2-Neo (Sync)** | **90.69** | **330.85** | **4.51** | 5.80 | 1.6100 | 784s | +240.16 |
-| **ARS2-Neo (AGA)** | 93.23 | 414.83 | 4.54 | 6.03 | 1.5906 | 546s | +321.60 |
+| **ARS2-Neo (A-GSAM)** | 93.23 | 414.83 | 4.54 | 6.03 | 1.5906 | 546s | +321.60 |
 
 ### 3.2 CIFAR-10 Visual Classification
 
@@ -57,7 +57,7 @@ Experimental Setup: ResNet-18, Batch Size 256.
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **ARS2-Neo (Sync, ρ=0.1)** | **95.87%** | **95.73%** | 0.0347 | 0.1500 | 0.1500 | 104s | +0.14 |
 | **ARS2-Neo (Base)** | 95.58% | 95.52% | 0.0181 | 0.2400 | 0.2500 | 71s | +0.06 |
-| **ARS2-Neo (AGA, λ=2.0)** | 94.10% | 94.09% | 0.1251 | 0.1800 | 0.1800 | 90s | +0.01 |
+| **ARS2-Neo (A-GSAM, λ=2.0)** | 94.10% | 94.09% | 0.1251 | 0.1800 | 0.1800 | 90s | +0.01 |
 | **AdamW** | 94.60% | 94.47% | 0.0451 | 0.2500 | 0.2700 | 58s | +0.13 |
 | **Muon** | 93.76% | 93.69% | 0.0267 | 0.2900 | 0.2900 | 75s* | +0.07 |
 
@@ -72,13 +72,13 @@ To verify the dynamic characteristics of the optimizer during generalization pha
 | **AdamW** | 113 | >600 | N/A | 15.65% |
 | **Muon** | 22 | >347 | N/A | 36.83% |
 | **ARS2-Neo (Base)** | 11 | 239 | 290 | 99.53% |
-| **ARS2-Neo (AGA)** | 12 | **77** | **116** | **99.60%** |
-| **ARS2C (AGA)** | 13 | 93 | 137 | 99.06% |
-| **ARS2C (Scaler) (AGA)** | 13 | 75 | 172 | 99.03% |
+| **ARS2-Neo (A-GSAM)** | 12 | **77** | **116** | **99.60%** |
+| **ARS2C (A-GSAM)** | 13 | 93 | 137 | 99.06% |
+| **ARS2C (Scaler) (A-GSAM)** | 13 | 75 | 172 | 99.03% |
 | **ARS2D (Base)** | 11 | 237 | 264 | 99.05% |
-| **ARS2D (AGA)** | 12 | **60** | **112** | **99.00%** |
+| **ARS2D (A-GSAM)** | 12 | **60** | **112** | **99.00%** |
 
-**Core Insight**: Energy-Geometry Decoupling avoids ineffective wandering in overfitting basins, directly traversing high-dimensional canyons to reach generalized solutions. ARS2D (AGA) achieves grokking in 60 epochs and convergence in 112 epochs, the fastest among all variants. Muon and AdamW fail to grok within 600 epochs.
+**Core Insight**: Energy-Geometry Decoupling avoids ineffective wandering in overfitting basins, directly traversing high-dimensional canyons to reach generalized solutions. ARS2D (A-GSAM) achieves grokking in 60 epochs and convergence in 112 epochs, the fastest among all variants. Muon and AdamW fail to grok within 600 epochs.
 
 ## 4. Quick Start
 
@@ -96,8 +96,8 @@ uv sync
 # Note: the experiment directory is `exp/wikitext-2`, so use script path invocation.
 python exp/wikitext-2/train.py --config config/lrp_wikitext2_ars2_neo_sync_10e.toml
 
-# Run CIFAR-10 AGA Mode (Efficient Convergence)
-python -m exp.cifar.train --config config/lrp_cifar10_ars2_neo_aga_20e.toml
+# Run CIFAR-10 A-GSAM Mode (Efficient Convergence)
+python -m exp.cifar.train --config config/lrp_cifar10_ars2_neo_A-GSAM_20e.toml
 ```
 
 ### 4.3 Result Tiers and Interpretation

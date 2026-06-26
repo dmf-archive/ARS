@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = [{ name = "Rui.Lin", email = "Lin.Rui.ipwt@proton.me" }]
 description = "ARS-Bench: The world first third-order optimizer benchmark framework"
 readme = "README.md"
-requires-python = ">=3.12, <3.13"
+requires-python = ">=3.12"
 license = { text = "AGPL-3.0-or-later" }
 dependencies = [
     "torch>=2.7.1",

@@ -189,10 +189,10 @@ def parse_grok_summary_compact(path):
     if m:
         opt_name = m.group(1)
 
-    # Find mode (Base/AGA)
+    # Find mode (Base/A-GSAM)
     mode = "Base"
     if "adaptive_sync" in config_text and "true" in config_text.split("adaptive_sync")[1][:20].lower():
-        mode = "AGA"
+        mode = "A-GSAM"
 
     # Find milestones table
     milestones = {}
@@ -262,7 +262,7 @@ def main():
     cifar_exps = [
         ("ARS2-Neo (Sync, ρ=0.1)", "lrp_cifar10_ars2_neo_sync_60e_rho01"),
         ("ARS2-Neo (Base)", "lrp_cifar10_ars2_neo_base_100e"),
-        ("ARS2-Neo (AGA, λ=2.0)", "lrp_cifar10_ars2_neo_aga_20e"),
+        ("ARS2-Neo (A-GSAM, λ=2.0)", "lrp_cifar10_ars2_neo_agsam_20e"),
         ("AdamW", "lrp_cifar10_adamw_100e"),
         ("Muon", "lrp_cifar10_muon_100e"),
     ]
@@ -304,7 +304,7 @@ def main():
         ("Muon", "lrp_wikitext2_muon_20e"),
         ("ARS2-Neo (Base)", "lrp_wikitext2_ars2_neo_base_20e"),
         ("ARS2-Neo (Sync)", "lrp_wikitext2_ars2_neo_sync_10e"),
-        ("ARS2-Neo (AGA)", "lrp_wikitext2_ars2_neo_aga_10e"),
+        ("ARS2-Neo (A-GSAM)", "lrp_wikitext2_ars2_neo_agsam_10e"),
     ]
     print()
     print("=" * 120)
@@ -343,11 +343,11 @@ def main():
         ("lrp_grok_adamw_600e", "AdamW", "Base"),
         ("lrp_grok_muon_400e", "Muon", "Base"),
         ("lrp_grok_ars2_neo_base_400e", "ARS2-Neo", "Base"),
-        ("lrp_grok_ars2_neo_aga_400e", "ARS2-Neo", "AGA"),
-        ("lrp_grok_ars2c_aga_400e", "ARS2C", "AGA"),
-        ("lrp_grok_ars2c_scaler_aga_400e", "ARS2C (Scaler)", "AGA"),
+        ("lrp_grok_ars2_neo_agsam_400e", "ARS2-Neo", "A-GSAM"),
+        ("lrp_grok_ars2c_agsam_400e", "ARS2C", "A-GSAM"),
+        ("lrp_grok_ars2c_scaler_agsam_400e", "ARS2C (Scaler)", "A-GSAM"),
         ("lrp_grok_ars2d_base_400e", "ARS2D", "Base"),
-        ("lrp_grok_ars2d_aga_400e", "ARS2D", "AGA"),
+        ("lrp_grok_ars2d_agsam_400e", "ARS2D", "A-GSAM"),
     ]
     print()
     print("=" * 120)

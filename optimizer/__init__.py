@@ -110,8 +110,8 @@ OPTIMIZER_REGISTRY: dict[str, OptimizerMetadata] = {
             "adaptive_sync", "adaptive_beta", "adaptive_lambda", "adaptive_gamma"
         ]
     ),
-    "ARS2C-SAGA": OptimizerMetadata(
-        cls_name="SingleDeviceARS2CSAGA", module_name="ars2c_saga",
+    "ARS2C-AR-GSAM": OptimizerMetadata(
+        cls_name="SingleDeviceARS2CARGSAM", module_name="ars2c_argsam",
         grouping=GroupingStrategy.RMSUON, expects_param_groups=True,
         capabilities=Capability.REQUIRES_CLOSURE | Capability.BN_PROTECTION,
         extra_config_keys=[
@@ -121,8 +121,8 @@ OPTIMIZER_REGISTRY: dict[str, OptimizerMetadata] = {
             "rho_kappa", "rho_eta", "rho_min", "rho_max"
         ]
     ),
-    "ARS2DC-SAGA": OptimizerMetadata(
-        cls_name="SingleDeviceARS2DCSAGA", module_name="ars2dc_saga",
+    "ARS2DC-AR-GSAM": OptimizerMetadata(
+        cls_name="SingleDeviceARS2DCARGSAM", module_name="ars2dc_argsam",
         grouping=GroupingStrategy.RMSUON, expects_param_groups=True,
         capabilities=Capability.REQUIRES_CLOSURE | Capability.BN_PROTECTION,
         extra_config_keys=[
@@ -130,7 +130,7 @@ OPTIMIZER_REGISTRY: dict[str, OptimizerMetadata] = {
             "adaptive_sync", "adaptive_beta", "adaptive_lambda", "adaptive_gamma",
             "beta1_min", "beta1_max", "beta2_min", "beta2_max",
             "rho_kappa", "rho_eta", "rho_min", "rho_max",
-            "is_dual", "is_aga", "is_saga", "is_christoffel",
+            "is_dual", "is_agsam", "is_argsam", "is_christoffel",
         ]
     ),
     "AdaMuon": OptimizerMetadata(

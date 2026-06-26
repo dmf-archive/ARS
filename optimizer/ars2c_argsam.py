@@ -57,11 +57,11 @@ def _adamw_step_kernel(
     param.addcdiv_(exp_avg, denom, value=-step_size)
 
 
-class ARS2CSAGA(Optimizer):
+class ARS2CARGSAM(Optimizer):
     """
-    ARS2C-SAGA: Sharpening-Aware Geometric Adaptation.
+    ARS2C-AR-GSAM: Christoffel-Aware Dynamic Beta + Adaptive-Rho GSAM.
 
-    ARS2C-SAGA is the flagship optimizer of the ARS family, unifying three
+    ARS2C-AR-GSAM is the flagship optimizer of the ARS family, unifying three
     geometric mechanisms into a single self-contained update law:
 
     1. **Energy-Geometry Decoupling** (ARS): Adam-style preconditioned gradients
@@ -69,13 +69,13 @@ class ARS2CSAGA(Optimizer):
        orthogonalization, enabling structured natural-gradient-like updates.
 
     2. **Christoffel-Aware Dynamic Beta** (ARS2C): The HVP implicitly sampled
-       during SAM sync steps is reused to construct a Christoffel matrix C.
+       during A-GSAM sync steps is reused to construct a Christoffel matrix C.
        The geometric alignment between the orthogonalized Christoffel direction
        c_ortho and the update direction s_ortho drives dynamic momentum decay
        rates beta1, beta2: high alignment (curvature structure present) → strong
        filtering; low alignment → fast adaptation.
 
-    3. **Sharpening-Aware Dynamic Rho** (SAGA): The SAM perturbation radius rho
+    3. **Adaptive-Rho GSAM** (AR-GSAM): The SAM perturbation radius rho
        is modulated by two orthogonal geometric signals extracted from the
        Christoffel matrix: curvature intensity ‖C‖_F and direction alignment
        cos_sim = |⟨c_ortho, s_unit⟩|. These combine multiplicatively:
@@ -92,7 +92,7 @@ class ARS2CSAGA(Optimizer):
        under persistently low alignment.
 
     The optimizer employs a dual-track design: 2D+ parameters are routed to
-    the full SAGA track (orthogonalized update + dynamic beta + dynamic rho),
+    the full AR-GSAM track (orthogonalized update + dynamic beta + dynamic rho),
     while 1D parameters (bias, LayerNorm, etc.) use fixed-beta AdamW.
 
     Args:
@@ -107,11 +107,11 @@ class ARS2CSAGA(Optimizer):
         rho: initial SAM perturbation radius, default 0.1.
         k: SAM mode; k=0 disables SAM, k=1 synchronous, k>1 delayed, default 1.
         alpha: base shear-force injection strength, default 0.1.
-        adaptive_sync: enable AGA sync mode, default False.
-        adaptive_beta: EMA coefficient for AGA geometric noise tracking and
-            SAGA curvature baseline ν, default 0.99.
-        adaptive_lambda: AGA sensitivity for dynamic threshold, default 2.0.
-        adaptive_gamma: AGA exponent for alpha amplification, default 2.0.
+        adaptive_sync: enable A-GSAM sync mode, default False.
+        adaptive_beta: EMA coefficient for A-GSAM geometric noise tracking and
+            AR-GSAM curvature baseline ν, default 0.99.
+        adaptive_lambda: A-GSAM sensitivity for dynamic threshold, default 2.0.
+        adaptive_gamma: A-GSAM exponent for alpha amplification, default 2.0.
         beta1_min, beta1_max: dynamic range for beta1, default (0.5, 0.95).
         beta2_min, beta2_max: dynamic range for beta2, default (0.9, 0.9995).
         rho_kappa: slow contraction rate for rho, default 0.01.
@@ -152,7 +152,7 @@ class ARS2CSAGA(Optimizer):
     @torch.no_grad()
     def step(self, closure: Callable[[], torch.Tensor] | None = None) -> torch.Tensor | None:
         if closure is None:
-            raise ValueError("ARS2C-SAGA requires a closure.")
+            raise ValueError("ARS2C-AR-GSAM requires a closure.")
 
         self.state['step'] += 1
         global_step = self.state['step']
@@ -567,9 +567,9 @@ class ARS2CSAGA(Optimizer):
         return d
 
 
-class SingleDeviceARS2CSAGA(ARS2CSAGA):
+class SingleDeviceARS2CARGSAM(ARS2CARGSAM):
     """
-    Single-device version of ARS2C-SAGA optimizer.
+    Single-device version of ARS2C-AR-GSAM optimizer.
 
     Removes DDP-related synchronization logic for non-distributed training.
     """

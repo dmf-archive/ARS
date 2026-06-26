@@ -1,7 +1,7 @@
 ---
 title: "Agent操作手册"
 version: "latest"
-last_updated: "2026-05-16"
+last_updated: "2026-06-22"
 ---
 
 ## 定义
@@ -43,6 +43,7 @@ REQ-001-EX: ARS2-Neo/ARS2C 优化器系统是唯一获准包含 Docstring 的源
 
 1. CON-001: 无必要不增实体（代码、函数、类或依赖）。
 2. CON-002: 严禁未经批准的超参数或启发式外部状态（如 EMA）。
+3. CON-003: 自适应调制函数必须优先使用 `log`/`sqrt` 族，严禁引入 `tanh`、`sigmoid` 或其他饱和非线性作为门控/自适应机制。
 
 ## 环境管理
 
