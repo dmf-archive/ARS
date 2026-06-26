@@ -241,7 +241,7 @@ def main():
         ("AdamW", torch.optim.AdamW, params, {"lr": 1e-3, "betas": (0.9, 0.999), "weight_decay": 0.01}),
         ("Muon", SingleDeviceMuonWithAuxAdam, muon_param_groups, {}),
         ("ARS2-Neo (Base)", ARS2Neo, params, {"lr": 1e-3, "betas": (0.9, 0.999), "weight_decay": 0.01, "rho": 0.1, "k": 1}),
-        ("ARS2-Neo (AGA)", ARS2Neo, params, {"lr": 1e-3, "betas": (0.9, 0.999), "weight_decay": 0.01, "rho": 0.1, "k": 1, "adaptive_sync": True, "adaptive_lambda": 2.0}),
+        ("ARS2-Neo (A-GSAM)", ARS2Neo, params, {"lr": 1e-3, "betas": (0.9, 0.999), "weight_decay": 0.01, "rho": 0.1, "k": 1, "adaptive_sync": True, "adaptive_lambda": 2.0}),
         ("ARS2C (Base)", ARS2C, params, {"lr": 1e-3, "betas": (0.9, 0.999), "weight_decay": 0.01, "rho": 0.1, "k": 1}),
         ("ARS2D (Base)", ARS2D, params, {"lr": 1e-3, "betas": (0.9, 0.999), "weight_decay": 0.01, "rho": 0.1, "k": 1}),
     ]

@@ -51,16 +51,16 @@ ARS2 并不逐字复刻 GSAM，而是保留其核心工程思想：
 
 对应实现锚点：[`ARS2Neo.step()`](optimizer/ars2_neo.py:123)。
 
-## 3. AGA：如何进一步压缩 GSAM 开销
+## 3. A-GSAM：如何进一步压缩 GSAM 开销
 
-静态 `k` 同步在不同任务曲率条件下开销-收益不稳定。AGA 通过全局干涉因子实现按需同步：
+静态 `k` 同步在不同任务曲率条件下开销-收益不稳定。A-GSAM 通过全局干涉因子实现按需同步：
 
 - 干涉因子计算：[`_calculate_global_phi()`](optimizer/ars2_neo.py:323)
 - 漂移判定阈值：[`threshold = - adaptive_lambda * std`](optimizer/ars2_neo.py:165)
 - 同步决策：[`is_sync_step = is_drift or ...`](optimizer/ars2_neo.py:171)
 - 非同步剪切力注入：[`p.grad.add_(v, alpha=...)`](optimizer/ars2_neo.py:288)
 
-简言之，AGA 把“每步都做昂贵对抗扰动”改写为“只在几何漂移时做完整同步，其余步复用剪切校正”。
+简言之，A-GSAM 把“每步都做昂贵对抗扰动”改写为“只在几何漂移时做完整同步，其余步复用剪切校正”。
 
 ## 4. SAM 与 MDL 的关系
 
@@ -75,4 +75,4 @@ ARS2 并不逐字复刻 GSAM，而是保留其核心工程思想：
 - base 前向与反向：[`loss = closure(); loss.backward()`](optimizer/ars2_neo.py:139)
 - 扰动与 adv 前向：[`loss_adv = closure(); loss_adv.backward()`](optimizer/ars2_neo.py:216)
 - 剪切力构造：[`state['shear_force'] = g_adv - ...`](optimizer/ars2_neo.py:275)
-- AGA 诊断输出：[`diagnostics`](optimizer/ars2_neo.py:353)
+- A-GSAM 诊断输出：[`diagnostics`](optimizer/ars2_neo.py:353)

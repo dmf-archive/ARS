@@ -24,7 +24,7 @@ n_ctx = 3
 act_type = "ReLU"
 
 [optimizer]
-name = "ARS2C-SAGA"
+name = "ARS2DC-AR-GSAM"
 lr = 0.001
 rho = 0.1
 adaptive_sync = true
@@ -41,3 +41,7 @@ rho_kappa = 0.01
 rho_eta = 0.1
 rho_min = 0.01
 rho_max = 1.0
+is_dual = true
+is_agsam = true
+is_argsam = true
+is_christoffel = true

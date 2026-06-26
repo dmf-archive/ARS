@@ -31,7 +31,7 @@
     "act_type": "ReLU"
   },
   "optimizer": {
-    "name": "ARS2DC-SAGA",
+    "name": "ARS2DC-AR-GSAM",
     "lr": 0.001,
     "rho": 0.1,
     "adaptive_sync": true,
@@ -52,8 +52,8 @@
     "rho_min": 0.01,
     "rho_max": 1.0,
     "is_dual": true,
-    "is_aga": true,
-    "is_saga": true,
+    "is_A-GSAM": true,
+    "is_AR-GSAM": true,
     "is_christoffel": true
   }
 }

@@ -83,6 +83,6 @@ ARS2C 继承自 ARS2-Neo，C 代表 Christoffel 符号 Γ^μ_νρ——信息几
 
 ## 4. 边界
 
-- ARS2C 控制动量衰减 β 的动力学（"记忆"维度），与 SAGA（"几何"维度，控制 ρ）正交互补。
+- ARS2C 控制动量衰减 β 的动力学（"记忆"维度），与 AR-GSAM（"几何"维度，控制 ρ）正交互补。
 - Non-sync step 复用上一次 sync step 的 alignment 值，不额外计算。
 - 1D 参数保持固定 β，避免标量 Christoffel 退化为全局衰减率调节。

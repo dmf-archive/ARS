@@ -2,7 +2,7 @@
 tasks = ["wikitext2"]
 seed = 42
 device = "cuda"
-epochs = 5
+epochs = 10
 
 [model]
 type = "rope"
@@ -21,19 +21,21 @@ num_workers = 0
 tokenizer_path = "./data/wikitext2_tokenizer.json"
 
 [optimizer]
-name = "ARS2-Neo"
+name = "ARS2C-AR-GSAM"
 lr = 0.001
 betas = [0.9, 0.95]
 rho = 0.3
-k = 5
-alpha = 0.1
+k = 1
+alpha = 0.0
 adaptive_sync = true
-asi_enabled = true
-adaptive_beta = 0.9
-adaptive_lambda = 1.0
+adaptive_lambda = 0.5
 adaptive_gamma = 2.0
-
-[pi]
-gamma = 1.0
-alpha = 1.0
-ema_beta = 0.9
+adaptive_beta = 0.9
+beta1_min = 0.5
+beta1_max = 0.9995
+beta2_min = 0.5
+beta2_max = 0.9995
+rho_kappa = 0.01
+rho_eta = 0.1
+rho_min = 0.01
+rho_max = 1.0

@@ -23,7 +23,7 @@ class ARS2D(ARS2Neo):
         W = NS(U^T)^T                            (column orthogonalization)
         Δθ = -η · E · W                          (energy-injected update)
 
-    All SAM/AGA logic is inherited from ARS2-Neo unchanged.
+    All SAM/A-GSAM logic is inherited from ARS2-Neo unchanged.
     No Christoffel dynamic beta is introduced (cf. ARS2C).
 
     Args:

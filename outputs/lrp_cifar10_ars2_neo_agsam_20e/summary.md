@@ -4,7 +4,7 @@
 ```json
 {
   "experiment": {
-    "name": "lrp_cifar10_ars2_neo_aga_20e",
+    "name": "lrp_cifar10_ars2_neo_A-GSAM_20e",
     "device": "cuda",
     "seed": 42,
     "tasks": [

@@ -1,5 +1,5 @@
 [experiment]
-name = "lrp_cifar10_ars2c_unlock_aga_20e"
+name = "lrp_cifar10_ars2c_unlock_agsam_20e"
 device = "cuda"
 seed = 42
 tasks = ["cifar10"]

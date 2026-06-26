@@ -31,7 +31,7 @@
     "act_type": "ReLU"
   },
   "optimizer": {
-    "name": "ARS2C-SAGA",
+    "name": "ARS2C-AR-GSAM",
     "lr": 0.001,
     "rho": 0.1,
     "adaptive_sync": true,

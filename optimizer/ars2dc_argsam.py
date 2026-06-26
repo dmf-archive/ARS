@@ -57,7 +57,7 @@ def adamw_step_kernel(
     param.addcdiv_(exp_avg, denom, value=-step_size)
 
 
-class ARS2DCSAGA(Optimizer):
+class ARS2DCARGSAM(Optimizer):
     def __init__(
         self, params,
         lr: float = 1e-3,
@@ -81,8 +81,8 @@ class ARS2DCSAGA(Optimizer):
         rho_min: float = 0.01,
         rho_max: float = 1.0,
         is_dual: bool = False,
-        is_aga: bool = False,
-        is_saga: bool = False,
+        is_agsam: bool = False,
+        is_argsam: bool = False,
         is_christoffel: bool = False,
     ):
         defaults = dict(
@@ -95,8 +95,8 @@ class ARS2DCSAGA(Optimizer):
             beta2_min=beta2_min, beta2_max=beta2_max,
             rho_kappa=rho_kappa, rho_eta=rho_eta,
             rho_min=rho_min, rho_max=rho_max,
-            is_dual=is_dual, is_aga=is_aga,
-            is_saga=is_saga, is_christoffel=is_christoffel,
+            is_dual=is_dual, is_agsam=is_agsam,
+            is_argsam=is_argsam, is_christoffel=is_christoffel,
         )
         super().__init__(params, defaults)
         self.state: dict[str, Any] = self.state
@@ -112,19 +112,19 @@ class ARS2DCSAGA(Optimizer):
     def _is_sam_enabled(self) -> bool:
         group0 = self.param_groups[0]
         k = group0.get('k', 1)
-        is_aga = group0.get('is_aga', False)
-        return k > 0 or is_aga
+        is_agsam = group0.get('is_agsam', False)
+        return k > 0 or is_agsam
 
     def _decide_sync(self) -> bool:
         global_step = self.state['step']
         group0 = self.param_groups[0]
         k = group0.get('k', 1)
-        is_aga = group0.get('is_aga', False)
+        is_agsam = group0.get('is_agsam', False)
 
         if not self._is_sam_enabled:
             return False
 
-        if is_aga:
+        if is_agsam:
             phi_t = self._calculate_global_phi()
             self.state['phi_t'] = phi_t
 
@@ -156,7 +156,7 @@ class ARS2DCSAGA(Optimizer):
 
     def _sam_perturb(self):
         global_step = self.state['step']
-        is_saga = self.param_groups[0].get('is_saga', False)
+        is_argsam = self.param_groups[0].get('is_argsam', False)
 
         for group in self.param_groups:
             rho_base = group.get('rho', 0.1)
@@ -171,10 +171,10 @@ class ARS2DCSAGA(Optimizer):
                 state = self.state[p]
                 if 'exp_avg_sq' not in state:
                     state['exp_avg_sq'] = torch.zeros_like(p)
-                    if is_saga:
+                    if is_argsam:
                         state['rho'] = rho_base
 
-                current_rho = state.get('rho', rho_base) if is_saga else rho_base
+                current_rho = state.get('rho', rho_base) if is_argsam else rho_base
                 v_hat = state['exp_avg_sq'] / (1 - beta2 ** max(1, global_step - 1) + 1e-12)
                 g_nat = p.grad / (v_hat.sqrt() + eps)
                 g_nat = g_nat * p.abs()
@@ -190,11 +190,11 @@ class ARS2DCSAGA(Optimizer):
         global_step = self.state['step']
         group0 = self.param_groups[0]
         k = group0.get('k', 1)
-        is_aga = group0.get('is_aga', False)
+        is_agsam = group0.get('is_agsam', False)
         is_christoffel = group0.get('is_christoffel', False)
-        is_saga = group0.get('is_saga', False)
-        has_shear = k > 1 or is_aga
-        has_curvature = is_christoffel or is_saga
+        is_argsam = group0.get('is_argsam', False)
+        has_shear = k > 1 or is_agsam
+        has_curvature = is_christoffel or is_argsam
 
         for group in self.param_groups:
             rho_base = group.get('rho', 0.1)
@@ -227,14 +227,14 @@ class ARS2DCSAGA(Optimizer):
                     _g_adv = p.grad
                     _delta_g = _g_adv - _g_base
                     _g_hat = _g_base / (_v_hat.sqrt() + _eps)
-                    current_rho = state.get('rho', rho_base) if is_saga else rho_base
+                    current_rho = state.get('rho', rho_base) if is_argsam else rho_base
                     _C = _delta_g / (current_rho * _g_hat.abs() + _eps)
                     _c_flat = _C.view(_C.size(0), -1)
                     c_norm = float(_c_flat.norm())
                     state['c_magnitude'] = c_norm
                     state['c_ortho'] = zeropower_via_newtonschulz5(_c_flat)
 
-                    if is_saga:
+                    if is_argsam:
                         nu = state.get('nu', c_norm)
                         nu = _beta_ema * nu + (1 - _beta_ema) * c_norm
                         state['nu'] = nu
@@ -270,7 +270,7 @@ class ARS2DCSAGA(Optimizer):
     @torch.no_grad()
     def step(self, closure: Callable[[], torch.Tensor] | None = None) -> torch.Tensor | None:
         if closure is None:
-            raise ValueError("ARS2DC-SAGA requires a closure.")
+            raise ValueError("ARS2DC-AR-GSAM requires a closure.")
 
         self.state['step'] += 1
         global_step = self.state['step']
@@ -355,7 +355,7 @@ class ARS2DCSAGA(Optimizer):
         group0 = self.param_groups[0]
         is_dual = group0.get('is_dual', False)
         is_christoffel = group0.get('is_christoffel', False)
-        is_saga = group0.get('is_saga', False)
+        is_argsam = group0.get('is_argsam', False)
 
         state = self.state[p]
         if 'exp_avg' not in state:
@@ -420,13 +420,13 @@ class ARS2DCSAGA(Optimizer):
         if p.ndim == 4:
             s_ortho = s_ortho.view(original_shape)
 
-        # Unified curvature block: pop c_ortho once, serve both Christoffel and SAGA
-        if (is_christoffel or is_saga) and 'c_ortho' in state:
+        # Unified curvature block: pop c_ortho once, serve both Christoffel and AR-GSAM
+        if (is_christoffel or is_argsam) and 'c_ortho' in state:
             c_ortho = state.pop('c_ortho')
             c_magnitude = state.pop('c_magnitude', 0.0)
             state['c_magnitude'] = c_magnitude
 
-            # SAGA: cos_sim always derived from c_ortho
+            # AR-GSAM: cos_sim always derived from c_ortho
             s_flat = s_ortho.view(s_ortho.size(0), -1)
             s_unit = s_flat / (s_flat.norm() + 1e-12)
             cos_sim = float((c_ortho * s_unit).sum().abs())
@@ -576,7 +576,7 @@ class ARS2DCSAGA(Optimizer):
         return d
 
 
-class SingleDeviceARS2DCSAGA(ARS2DCSAGA):
+class SingleDeviceARS2DCARGSAM(ARS2DCARGSAM):
     def _update_ars(self, group: dict, global_step: int):
         beta1, beta2 = group['betas']
         lr = group['lr']

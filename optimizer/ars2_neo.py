@@ -79,7 +79,7 @@ class ARS2Neo(Optimizer):
     - rho: SAM perturbation radius controlling flatness strength, default 0.1.
     - k: SAM mode parameter; k=0 disables SAM, k=1 gives synchronous mode, k>1 gives delayed mode, default 1.
     - alpha: base shear-force injection strength, default 0.1.
-    - adaptive_sync: enable Adaptive Geometric Awareness (AGA) sync mode, default False.
+    - adaptive_sync: enable A-GSAM sync mode, default False.
     - adaptive_beta: EMA coefficient for tracking geometric noise, default 0.99.
     - adaptive_lambda: sensitivity for dynamic threshold (L = -lambda * std), default 2.0.
     - adaptive_gamma: exponent for alpha amplification, default 2.0.
@@ -98,7 +98,7 @@ class ARS2Neo(Optimizer):
         super().__init__(params, defaults)
         self.state: dict[str, Any] = self.state
         self.state['step'] = 0
-        # AGA Global State
+        # A-GSAM Global State
         self.state['phi_t'] = 1.0
         self.state['phi_var'] = 0.0
         self.state['threshold'] = 1.0
