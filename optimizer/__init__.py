@@ -91,6 +91,16 @@ OPTIMIZER_REGISTRY: dict[str, OptimizerMetadata] = {
             "adaptive_sync", "adaptive_beta", "adaptive_lambda", "adaptive_gamma"
         ]
     ),
+    "ARS2-Neo-AGAM": OptimizerMetadata(
+        cls_name="SingleDeviceARS2NeoAGAM", module_name="ars2_agam",
+        grouping=GroupingStrategy.RMSUON, expects_param_groups=True,
+        capabilities=Capability.REQUIRES_CLOSURE | Capability.BN_PROTECTION,
+        extra_config_keys=[
+            "betas", "eps", "rho", "k", "alpha", "ns_steps",
+            "adaptive_sync", "adaptive_beta", "adaptive_lambda", "adaptive_gamma",
+            "agam_window", "agam_n_paths", "agam_beta1", "agam_beta2", "agam_rho_small"
+        ]
+    ),
     "ARS2C": OptimizerMetadata(
         cls_name="SingleDeviceARS2C", module_name="ars2c",
         grouping=GroupingStrategy.RMSUON, expects_param_groups=True,
