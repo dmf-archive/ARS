@@ -4,10 +4,10 @@ version = "0.1.0"
 authors = [{ name = "Rui.Lin", email = "Lin.Rui.ipwt@proton.me" }]
 description = "ARS-Bench: The world first third-order optimizer benchmark framework"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12, <3.15"
 license = { text = "AGPL-3.0-or-later" }
 dependencies = [
-    "torch>=2.7.1",
+    "torch>=2.13.0",
     "rich>=14.0.0",
     "tqdm",
     "toml>=0.10.2",
@@ -16,7 +16,7 @@ dependencies = [
     "einops>=0.8.1",
     "asdl",
     "timm>=1.0.21",
-    "datasets[progress]>=4.4.1",
+    "datasets>=4.4.1",
     "tokenizers>=0.22.1",
     "transformers>=4.57.3",
     "matplotlib>=3.10.8",
@@ -38,13 +38,11 @@ include = ["ARS*", "scripts*", "optimizer*", "model*", "task*", "config*"]
 
 [dependency-groups]
 dev = [
-    "mypy",
     "pytest",
     "ruff",
     "pytest>=8.4.1",
-    "torch==2.7.1+cu128",
-    "torchvision",
-    "torchaudio",
+    "torchvision>=0.28.0",
+    "torchaudio>=2.11.0",
     "types-pyyaml>=6.0.12.20250516",
     "types-toml>=0.10.8.20240310",
 ]
@@ -56,18 +54,9 @@ ignore_missing_imports = true
 exclude = ["ref"]
 
 [tool.uv.sources]
-torch = [{ index = "pytorch-cu128" }]
+torch = [{ index = "pytorch-cu130" }]
 asdl = { git = "https://github.com/kazukiosawa/asdl", rev = "011a942b2698b9ec33b0c8c47c96bd49335e5d80" }
 
-[[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
-explicit = true
-
-[[tool.uv.index]]
-name = "pyg-cu128"
-url = "https://data.pyg.org/whl/torch-2.7.0+cu128.html"
-explicit = true
 
 [tool.ruff]
 exclude = ["ref", "exp", ".venv"]
